@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Belmont Digital | Websites + AI systems for local service businesses</title>
+  <meta name="description" content="Belmont Digital builds modern websites, AI chat systems, and follow-up automation for local service businesses." />
+  <style>
+    :root {
+      --bg: #d9d9d2;
+      --bg-soft: #e7e7e0;
+      --panel: #f4f4ef;
+      --panel-2: #ecece6;
+      --ink: #101010;
+      --muted: #6c6c67;
+      --line: rgba(16, 16, 16, 0.12);
+      --line-strong: rgba(16, 16, 16, 0.18);
+      --shadow: 0 18px 50px rgba(0,0,0,0.08);
+      --radius: 28px;
+      --radius-sm: 18px;
+      --radius-xs: 12px;
+      --container: 1440px;
+      --gap: clamp(20px, 3vw, 40px);
+      --space: clamp(90px, 10vw, 150px);
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; border: 0; background: transparent; cursor: pointer; }
+
+    .container {
+      width: min(var(--container), calc(100% - var(--gap) * 2));
+      margin: 0 auto;
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .label::before {
+      content: "";
+      width: 26px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+
+    .hero-title {
+      font-size: clamp(3.5rem, 12vw, 10rem);
+      line-height: 0.9;
+      letter-spacing: -0.06em;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .heading-xl {
+      font-size: clamp(2.2rem, 4.5vw, 4rem);
+      line-height: 1.2;
+      letter-spacing: -0.03em;
+      font-weight: 700;
+    }
+
+    .heading-l {
+      font-size: clamp(1.4rem, 2.5vw, 2.2rem);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 700;
+    }
+
+    .body-lg {
+      font-size: clamp(1.1rem, 1.8vw, 1.45rem);
+      line-height: 1.45;
+      color: var(--ink);
+      max-width: 720px;
+    }
+
+    .body,
+    .meta {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.65;
+    }
+
+    .meta { font-size: 0.92rem; }
+
+    [data-reveal] {
+      opacity: 0;
+      transform: translateY(26px);
+      filter: blur(6px);
+      transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease);
+    }
+
+    [data-reveal].visible {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+
+    .header {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 30;
+      padding: 26px 0;
+      pointer-events: none;
+      transition: transform 0.3s ease;
+    }
+    .header.hidden {
+      transform: translateY(-100%);
+    }
+
+    .header-shell {
+      width: min(var(--container), calc(100% - var(--gap) * 2));
+      margin: 0 auto;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(244, 244, 239, 0.68);
+      backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: auto;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.04);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 0.95rem;
+      letter-spacing: -0.04em;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: var(--ink);
+      color: var(--bg);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .nav a,
+    .btn,
+    .btn-dark {
+      border-radius: 999px;
+      padding: 11px 18px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      transition: transform .24s ease, background .24s ease, color .24s ease, border-color .24s ease;
+    }
+
+    .nav a:hover,
+    .btn:hover,
+    .btn-dark:hover { transform: translateY(-1px); }
+
+    .nav a { color: var(--muted); }
+    .nav a:hover { color: var(--ink); }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn-dark {
+      background: #2563eb;
+      color: #ffffff !important;
+      border: 1px solid #2563eb;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .menu-btn {
+      display: none;
+      font-weight: 700;
+      font-size: 0.82rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    section { padding: 60px 0; border-top: 1px solid var(--line); }
+    section:first-of-type { border-top: 0; }
+
+    .hero {
+      padding-top: 150px;
+      padding-bottom: 70px;
+    }
+
+    .hero-top {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 60px;
+      align-items: end;
+      margin-top: 28px;
+    }
+
+    .hero-copy {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 34px;
+      margin-top: 48px;
+      padding-top: 26px;
+      border-top: 1px solid var(--line);
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      margin-top: 42px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-stat {
+      padding: 22px 20px;
+      min-height: 100px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 8px;
+      border-right: 1px solid var(--line);
+    }
+
+    .hero-stat:last-child { border-right: 0; }
+    .hero-stat strong {
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    /* NEW: Split screen hero layout with Pipeline Dashboard */
+    .hero-split {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 40px;
+      align-items: center;
+      margin-top: 54px;
+    }
+
+    .hero-split-left {
+      display: grid;
+      gap: 24px;
+    }
+
+    .hero-split-right {
+      border: 1px solid var(--line-strong);
+      border-radius: 34px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
+      box-shadow: var(--shadow);
+    }
+
+    .pipeline-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.4);
+    }
+
+    .pipeline-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .pipeline-badge {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: rgba(255,255,255,0.6);
+    }
+
+    .pipeline-board {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 24px;
+      min-height: 380px;
+    }
+
+    .pipeline-column {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .column-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--line);
+    }
+
+    .column-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .column-dot.new { background: #2563eb; }
+    .column-dot.qualified { background: #10b981; }
+    .column-dot.scheduled { background: #f59e0b; }
+    .column-dot.completed { background: var(--ink); }
+
+    .column-name {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .pipeline-card {
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.7);
+      display: grid;
+      gap: 10px;
+    }
+
+    .card-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--ink), var(--muted));
+    }
+
+    .card-info {
+      display: grid;
+      gap: 4px;
+    }
+
+    .card-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .card-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .card-tag {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      background: rgba(37, 99, 235, 0.1);
+      color: #2563eb;
+    }
+
+    .eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 42px;
+    }
+
+    /* NEW: Horizontal service cards with icons */
+    .services-grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    .service-card {
+      border: 1px solid var(--line-strong);
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
+      padding: 28px 32px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 32px;
+      align-items: center;
+      transition: transform .24s ease, box-shadow .24s ease;
+    }
+
+    .service-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .service-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: var(--ink);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .service-icon svg {
+      width: 32px;
+      height: 32px;
+      color: var(--bg);
+    }
+
+    .service-content {
+      display: grid;
+      gap: 8px;
+    }
+
+    .service-preview {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .preview-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(16,16,16,0.2);
+    }
+
+    .preview-line {
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(16,16,16,0.1);
+    }
+
+    /* NEW: Industry metrics cards */
+    .industries-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+
+    .industry-card {
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04));
+      padding: 24px;
+      display: grid;
+      gap: 20px;
+      align-content: start;
+      min-height: 280px;
+    }
+
+    .industry-header {
+      display: grid;
+      gap: 8px;
+    }
+
+    .industry-metrics {
+      display: grid;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .metric-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.5);
+      border: 1px solid var(--line);
+    }
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .metric-value {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .metric-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(16,16,16,0.08);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--ink);
+    }
+
+    .belief-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .belief-card {
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 22px;
+      min-height: 250px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+      background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04));
+    }
+
+    .callout {
+      padding: 18px;
+      display: grid;
+      gap: 10px;
+      min-height: 120px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.48);
+    }
+
+    .cta-shell {
+      border: 1px solid var(--line-strong);
+      border-radius: 30px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.08));
+      padding: 32px;
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .cta-panel {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,0.45);
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel-list { display: grid; gap: 12px; }
+
+    .panel-item {
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .panel-item:first-child { border-top: 0; padding-top: 0; }
+
+    .footer-wrap {
+      padding: 48px 0 56px;
+      border-top: 1px solid var(--line);
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.4fr .8fr .8fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .footer-card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.48);
+    }
+
+    .footer-links {
+      display: grid;
+      gap: 10px;
+    }
+
+    .footer-links a {
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .footer-links a:hover { color: var(--ink); }
+
+    @media (max-width: 1180px) {
+      .hero-split,
+      .cta-shell,
+      .hero-top,
+      .section-head {
+        grid-template-columns: 1fr;
+      }
+
+      .service-card {
+        grid-template-columns: auto 1fr;
+      }
+
+      .service-preview {
+        display: none;
+      }
+
+      .belief-grid { grid-template-columns: 1fr; }
+      .industries-grid { grid-template-columns: repeat(2, 1fr); }
+      .footer-grid { grid-template-columns: repeat(2, 1fr); }
+      .hero-copy { grid-template-columns: 1fr; }
+      .pipeline-board { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 860px) {
+      .header-shell { border-radius: 24px; align-items: flex-start; }
+      .nav {
+        display: none;
+        position: absolute;
+        left: var(--gap);
+        right: var(--gap);
+        top: calc(100% + 10px);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: rgba(244,244,239,0.95);
+        padding: 12px;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .nav.open { display: flex; }
+      .menu-btn { display: inline-flex; }
+      .hero-stat { padding-right: 12px; }
+      .hero-stats,
+      .belief-grid,
+      .industries-grid,
+      .footer-grid { grid-template-columns: 1fr; }
+      .hero-title { font-size: clamp(3.8rem, 22vw, 7rem); }
+      .heading-xl { font-size: clamp(2.2rem, 14vw, 3.6rem); }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .btn, .btn-dark { width: 100%; }
+      .pipeline-board { grid-template-columns: 1fr; }
+      .service-card { padding: 20px; }
+    }
+
+    /* NEW SECTION STYLES */
+
+    /* Services Grid - Vertical Cards with Browser Mockups */
+    .services-grid-new {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .service-card-new {
+      border: 1px solid var(--line-strong);
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
+      overflow: hidden;
+      transition: transform .24s ease, box-shadow .24s ease;
+    }
+
+    .service-card-new:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+    }
+
+    .browser-mockup {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .browser-bar {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.5);
+    }
+
+    .browser-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .browser-dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--line-strong);
+    }
+
+    .browser-dots span:nth-child(1) { background: #ff5f57; }
+    .browser-dots span:nth-child(2) { background: #febc2e; }
+    .browser-dots span:nth-child(3) { background: #28c840; }
+
+    .browser-content {
+      padding: 24px;
+      min-height: 220px;
+    }
+
+    .mock-hero {
+      background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(37,99,235,0.02));
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .mock-line {
+      background: var(--line-strong);
+      border-radius: 4px;
+    }
+
+    .mock-cta {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 8px 16px;
+      background: #2563eb;
+      color: white;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .mock-body {
+      padding: 0 4px;
+    }
+
+    /* Chat Mockup */
+    .chat-mockup .browser-content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-bubble {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 16px;
+    }
+
+    .chat-bubble.bot {
+      background: rgba(255,255,255,0.8);
+      border: 1px solid var(--line);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .chat-bubble.user {
+      background: #2563eb;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-bubble.user .mock-line {
+      background: rgba(255,255,255,0.6);
+    }
+
+    .chat-input {
+      margin-top: auto;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.6);
+    }
+
+    /* Flow Mockup */
+    .flow-mockup .browser-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .flow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--bg);
+      display: grid;
+      place-items: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .flow-line-h {
+      width: 2px;
+      height: 12px;
+      background: var(--line-strong);
+    }
+
+    .flow-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .flow-connector {
+      width: 24px;
+      height: 2px;
+      background: var(--line-strong);
+    }
+
+    .service-card-content {
+      padding: 24px;
+      display: grid;
+      gap: 8px;
+    }
+
+    /* Industries Grid - Simple 4-Column */
+    .industries-grid-new {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+
+    .industry-card-new {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04));
+      padding: 24px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+      transition: transform .24s ease, box-shadow .24s ease;
+    }
+
+    .industry-card-new:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .industry-visual {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--ink);
+      display: grid;
+      place-items: center;
+    }
+
+    .industry-visual svg {
+      width: 24px;
+      height: 24px;
+      color: var(--bg);
+    }
+
+    .industry-card-content {
+      display: grid;
+      gap: 6px;
+    }
+
+    .industry-card-content strong {
+      font-size: 0.95rem;
+      line-height: 1.4;
+      color: var(--ink);
+    }
+
+    /* Timeline */
+    .timeline-container {
+      padding: 20px 0;
+    }
+
+    .timeline {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 0;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .timeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 16px;
+      flex: 1;
+    }
+
+    .timeline-circle {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--bg);
+      display: grid;
+      place-items: center;
+      font-size: 1.1rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .timeline-content {
+      display: grid;
+      gap: 6px;
+    }
+
+    .timeline-content strong {
+      font-size: 1.1rem;
+    }
+
+    .timeline-content .meta {
+      font-size: 0.9rem;
+      max-width: 220px;
+      margin: 0 auto;
+    }
+
+    .timeline-connector {
+      width: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-top: 28px;
+    }
+
+    .timeline-line {
+      width: 100%;
+      height: 2px;
+      background: var(--line-strong);
+    }
+
+    /* Centered CTA */
+    .cta-centered {
+      border: 1px solid var(--line-strong);
+      border-radius: 30px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.08));
+      padding: 60px 40px;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .services-grid-new { grid-template-columns: repeat(2, 1fr); }
+      .industries-grid-new { grid-template-columns: repeat(2, 1fr); }
+      .timeline { flex-wrap: wrap; gap: 40px; }
+      .timeline-connector { display: none; }
+      .timeline-step { flex: 1 1 45%; }
+    }
+
+    @media (max-width: 860px) {
+      .services-grid-new { grid-template-columns: 1fr; }
+      .timeline-step { flex: 1 1 100%; }
+    }
+
+    /* Typing animation for chat mockup */
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-3px); opacity: 1; }
+    }
+
+    @media (max-width: 640px) {
+      .hero { padding-top: 126px; }
+      .hero-stats { grid-template-columns: 1fr; }
+      .hero-stat { border-right: 0; border-bottom: 1px solid var(--line); }
+      .hero-stat:last-child { border-bottom: 0; }
+      .hero-title { font-size: clamp(3.8rem, 22vw, 7rem); }
+      .heading-xl { font-size: clamp(2.2rem, 14vw, 3.6rem); }
+      .service-icon { width: 56px; height: 56px; }
+      .service-icon svg { width: 24px; height: 24px; }
+      .cta-shell { padding: 20px; }
+      .industries-grid-new { grid-template-columns: 1fr; }
+      .cta-centered { padding: 40px 24px; }
+      .browser-content { min-height: 180px; padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-shell">
+      <a class="brand" href="#top">
+        <span class="brand-mark">BD</span>
+        <span>BELMONT DIGITAL</span>
+      </a>
+      <nav class="nav" id="site-nav">
+        <a href="#systems">Systems</a>
+        <a href="#industries">Industries</a>
+        <a href="#approach">Approach</a>
+        <a href="#book" class="btn-dark">Book a Call</a>
+      </nav>
+      <button class="menu-btn" id="menu-btn" aria-label="Toggle menu">Menu</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="container">
+        <span class="label" data-reveal>Websites + AI Systems for Local Service Businesses</span>
+        <div class="hero-top">
+          <div data-reveal>
+            <h1 class="hero-title">BELMONT<br>DIGITAL</h1>
+          </div>
+          <div data-reveal>
+            <p class="body-lg">Websites, AI chat systems, and follow up automation for local service businesses that need a cleaner way to capture and close demand.</p>
+            <div class="hero-actions">
+              <a class="btn-dark" href="#book">Book a Free Audit</a>
+              <a class="btn" href="#systems">See the System</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-stats" data-reveal>
+          <div class="hero-stat">
+            <strong>Websites</strong>
+            <p class="meta">Modern pages built to move a visitor toward one clear next step.</p>
+          </div>
+          <div class="hero-stat">
+            <strong>AI Chat</strong>
+            <p class="meta">Always on intake that captures context before a lead disappears.</p>
+          </div>
+          <div class="hero-stat">
+            <strong>Automation</strong>
+            <p class="meta">Follow up logic that keeps inquiry volume from slipping through the cracks.</p>
+          </div>
+        </div>
+
+        <!-- NEW: Split screen hero with Pipeline Dashboard -->
+        <div class="hero-split" data-reveal>
+          <div class="hero-split-left">
+            <span class="eyebrow">Lead Pipeline View</span>
+            <h2 class="heading-xl">See every lead. Track every stage. Close more deals.</h2>
+            <p class="body">A unified dashboard that shows where your leads are in the journey—from first contact to completed service. No more leads falling through the cracks.</p>
+            <div class="hero-actions">
+              <a class="btn-dark" href="#book">Book a Free Audit</a>
+            </div>
+          </div>
+          <div class="hero-split-right">
+            <div class="pipeline-header">
+              <div class="pipeline-title">Lead Pipeline Dashboard</div>
+              <span class="pipeline-badge">Live View</span>
+            </div>
+            <div class="pipeline-board">
+              <div class="pipeline-column">
+                <div class="column-header">
+                  <span class="column-dot new"></span>
+                  <span class="column-name">New Lead</span>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">Sarah M.</div>
+                    <div class="card-meta">Roof inspection request</div>
+                    <span class="card-tag">Hot</span>
+                  </div>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">James K.</div>
+                    <div class="card-meta">Emergency plumbing</div>
+                    <span class="card-tag">Urgent</span>
+                  </div>
+                </div>
+              </div>
+              <div class="pipeline-column">
+                <div class="column-header">
+                  <span class="column-dot qualified"></span>
+                  <span class="column-name">Qualified</span>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">Maria L.</div>
+                    <div class="card-meta">HVAC install quote</div>
+                    <span class="card-tag">$8,500</span>
+                  </div>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">David R.</div>
+                    <div class="card-meta">Weekly cleaning</div>
+                    <span class="card-tag">Recurring</span>
+                  </div>
+                </div>
+              </div>
+              <div class="pipeline-column">
+                <div class="column-header">
+                  <span class="column-dot scheduled"></span>
+                  <span class="column-name">Scheduled</span>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">Jennifer T.</div>
+                    <div class="card-meta">Tomorrow 2:00 PM</div>
+                    <span class="card-tag">Confirmed</span>
+                  </div>
+                </div>
+              </div>
+              <div class="pipeline-column">
+                <div class="column-header">
+                  <span class="column-dot completed"></span>
+                  <span class="column-name">Completed</span>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">Robert P.</div>
+                    <div class="card-meta">Roof repair finished</div>
+                    <span class="card-tag">Review sent</span>
+                  </div>
+                </div>
+                <div class="pipeline-card">
+                  <div class="card-avatar"></div>
+                  <div class="card-info">
+                    <div class="card-name">Amanda S.</div>
+                    <div class="card-meta">Deep clean done</div>
+                    <span class="card-tag">5★ Review</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="systems">
+      <div class="container">
+        <div class="section-head">
+          <div data-reveal>
+            <span class="label">What Belmont builds</span>
+          </div>
+          <div data-reveal>
+            <h2 class="heading-xl">A cleaner offer stack with redesigned mockups that actually look custom.</h2>
+          </div>
+        </div>
+
+        <!-- NEW: Vertical service cards with browser mockups -->
+        <div class="services-grid-new">
+          <article class="service-card-new" data-reveal>
+            <div class="browser-mockup">
+              <div class="browser-bar">
+                <div class="browser-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="browser-content" style="padding:24px;">
+                <div style="font-size:0.9rem;font-weight:700;color:var(--ink);margin-bottom:8px;">Local Service Business</div>
+                <div style="font-size:0.75rem;color:var(--muted);line-height:1.5;margin-bottom:16px;">Trusted by homeowners across the city. Fast response. Fair pricing.</div>
+                <div style="display:flex;gap:8px;margin-bottom:16px;">
+                  <div style="flex:1;height:60px;background:rgba(255,255,255,0.6);border-radius:8px;border:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;">
+                    <div style="font-size:0.85rem;font-weight:700;color:var(--ink);">Services</div>
+                    <div style="font-size:0.6rem;color:var(--muted);">What we do</div>
+                  </div>
+                  <div style="flex:1;height:60px;background:rgba(255,255,255,0.6);border-radius:8px;border:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;">
+                    <div style="font-size:0.85rem;font-weight:700;color:var(--ink);">Reviews</div>
+                    <div style="font-size:0.6rem;color:var(--muted);">★★★★★</div>
+                  </div>
+                </div>
+                <div style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;border-radius:8px;font-size:0.75rem;font-weight:600;">Get Free Quote</div>
+              </div>
+            </div>
+            <div class="service-card-content">
+              <span class="eyebrow">Website Design</span>
+              <h3 class="heading-l">Websites that turn visitors into qualified leads</h3>
+            </div>
+          </article>
+
+          <article class="service-card-new" data-reveal>
+            <div class="browser-mockup chat-mockup">
+              <div class="browser-bar">
+                <div class="browser-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="browser-content chat-content" style="display:flex;flex-direction:column;gap:12px;padding:20px;">
+                <div class="chat-bubble bot" style="font-size:0.75rem;color:var(--ink);">
+                  Hi there! I can help you get a quote. What service are you looking for?
+                </div>
+                <div class="chat-bubble user" style="font-size:0.75rem;color:white;">
+                  Deep cleaning for a 3 bedroom home
+                </div>
+                <div class="chat-bubble bot" style="font-size:0.75rem;color:var(--ink);">
+                  Perfect. I can get you scheduled for this week. What day works best?
+                </div>
+              </div>
+            </div>
+            <div class="service-card-content">
+              <span class="eyebrow">AI Chatbot</span>
+              <h3 class="heading-l">24/7 chatbot capture that never misses an inquiry</h3>
+            </div>
+          </article>
+
+          <article class="service-card-new" data-reveal>
+            <div class="browser-mockup flow-mockup">
+              <div class="browser-bar">
+                <div class="browser-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="browser-content flow-content">
+                <div class="flow-step">
+                  <div class="flow-circle">1</div>
+                  <div class="flow-line-h"></div>
+                  <div class="flow-label">Lead</div>
+                </div>
+                <div class="flow-connector"></div>
+                <div class="flow-step">
+                  <div class="flow-circle">2</div>
+                  <div class="flow-line-h"></div>
+                  <div class="flow-label">Qualify</div>
+                </div>
+                <div class="flow-connector"></div>
+                <div class="flow-step">
+                  <div class="flow-circle">3</div>
+                  <div class="flow-line-h"></div>
+                  <div class="flow-label">Book</div>
+                </div>
+              </div>
+            </div>
+            <div class="service-card-content">
+              <span class="eyebrow">Follow Up Automation</span>
+              <h3 class="heading-l">Automated follow-up that stops leads from going cold</h3>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="industries">
+      <div class="container">
+        <div class="section-head">
+          <div data-reveal>
+            <span class="label">Who it is built for</span>
+          </div>
+          <div data-reveal>
+            <h2 class="heading-xl">Flexible enough for multiple service businesses without losing focus.</h2>
+          </div>
+        </div>
+
+        <!-- NEW: Simple 4-column industry cards -->
+        <div class="industries-grid-new">
+          <article class="industry-card-new" data-reveal>
+            <div class="industry-visual">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
+            </div>
+            <div class="industry-card-content">
+              <span class="eyebrow">Cleaning</span>
+              <strong>Quote capture and recurring service flows</strong>
+            </div>
+          </article>
+
+          <article class="industry-card-new" data-reveal>
+            <div class="industry-visual">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 22h20"></path>
+                <path d="M6 22v-6l6-6 6 6v6"></path>
+                <path d="M12 10V2"></path>
+                <path d="M12 2L8 6"></path>
+                <path d="M12 2l4 4"></path>
+              </svg>
+            </div>
+            <div class="industry-card-content">
+              <span class="eyebrow">Roofing</span>
+              <strong>Inspection pages and higher ticket intake</strong>
+            </div>
+          </article>
+
+          <article class="industry-card-new" data-reveal>
+            <div class="industry-visual">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v6m0 0l-3-3m3 3l3-3"></path>
+                <path d="M19 9a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"></path>
+                <path d="M12 16v6"></path>
+                <path d="M9 22h6"></path>
+              </svg>
+            </div>
+            <div class="industry-card-content">
+              <span class="eyebrow">Plumbing</span>
+              <strong>Fast response for urgent service calls</strong>
+            </div>
+          </article>
+
+          <article class="industry-card-new" data-reveal>
+            <div class="industry-visual">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2z"></path>
+                <path d="M12 6v6l4 2"></path>
+              </svg>
+            </div>
+            <div class="industry-card-content">
+              <span class="eyebrow">HVAC</span>
+              <strong>Seasonal campaigns and maintenance plans</strong>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="approach">
+      <div class="container">
+        <div class="section-head">
+          <div data-reveal>
+            <span class="label">How we work</span>
+          </div>
+          <div data-reveal>
+            <h2 class="heading-xl">Audit. Build. Optimize. Your new system in days not weeks.</h2>
+          </div>
+        </div>
+
+        <!-- NEW: Horizontal timeline -->
+        <div class="timeline-container" data-reveal>
+          <div class="timeline">
+            <div class="timeline-step">
+              <div class="timeline-circle">1</div>
+              <div class="timeline-content">
+                <span class="eyebrow">Step 1</span>
+                <strong>Audit</strong>
+                <p class="meta">We analyze your current flow—where leads come from and where they get stuck.</p>
+              </div>
+            </div>
+            <div class="timeline-connector">
+              <div class="timeline-line"></div>
+            </div>
+            <div class="timeline-step">
+              <div class="timeline-circle">2</div>
+              <div class="timeline-content">
+                <span class="eyebrow">Step 2</span>
+                <strong>Build</strong>
+                <p class="meta">Two-week sprints with clear deliverables. You see progress weekly.</p>
+              </div>
+            </div>
+            <div class="timeline-connector">
+              <div class="timeline-line"></div>
+            </div>
+            <div class="timeline-step">
+              <div class="timeline-circle">3</div>
+              <div class="timeline-content">
+                <span class="eyebrow">Step 3</span>
+                <strong>Optimize</strong>
+                <p class="meta">Launch is just the start. We track, tweak, and improve continuously.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="book">
+      <div class="container">
+        <div class="cta-centered" data-reveal>
+          <span class="label">Next step</span>
+          <h2 class="heading-xl" style="margin-top:18px;">Book a free audit and see exactly where your site is losing leads.</h2>
+          <p class="body" style="margin-top:22px; max-width: 700px; margin-left:auto; margin-right:auto;">Get a 15-minute review of your current website, AI fit, and follow-up gaps. Walk away with a clear list of what to fix first.</p>
+          <div class="hero-actions" style="margin-top:26px; justify-content:center;">
+            <a class="btn-dark" href="https://link.rjamesandassociates.com/widget/booking/QNJrNUPQ5zcwUCLNXcHx" target="_blank">Book My Free Audit</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer-wrap">
+    <div class="container footer-grid">
+      <div class="footer-card">
+        <div class="brand" style="margin-bottom:16px;">
+          <span class="brand-mark">BD</span>
+          <span>BELMONT DIGITAL</span>
+        </div>
+        <p class="meta">Websites, AI chat systems, and follow up automation for local service businesses that want a cleaner front end and a stronger operating system behind it.</p>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:12px;">Navigation</div>
+        <div class="footer-links">
+          <a href="#systems">Systems</a>
+          <a href="#industries">Industries</a>
+          <a href="#approach">Approach</a>
+          <a href="#book">Book</a>
+        </div>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:12px;">Offer</div>
+        <div class="footer-links">
+          <a href="#">Website design</a>
+          <a href="#">AI chat setup</a>
+          <a href="#">Follow up systems</a>
+          <a href="#">Audit and redesign</a>
+        </div>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:12px;">Notes</div>
+        <p class="meta">Belmont Digital helps local service businesses turn more visitors into booked appointments.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const revealTargets = [...document.querySelectorAll('[data-reveal]')];
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reduceMotion) {
+      revealTargets.forEach((el) => el.classList.add('visible'));
+    } else {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+          }
+        });
+      }, { threshold: 0.12 });
+
+      revealTargets.forEach((el) => observer.observe(el));
+    }
+
+    const menuBtn = document.getElementById('menu-btn');
+    const nav = document.getElementById('site-nav');
+    menuBtn?.addEventListener('click', () => nav.classList.toggle('open'));
+
+    let lastScroll = 0;
+    const header = document.querySelector('.header');
+    window.addEventListener('scroll', () => {
+      const currentScroll = window.pageYOffset;
+      if (currentScroll > lastScroll && currentScroll > 100) {
+        header?.classList.add('hidden');
+      } else {
+        header?.classList.remove('hidden');
+      }
+      lastScroll = currentScroll;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+name: seo-platform
+
+# Phase 2 scope: app boots, worker starts and stays healthy, Postgres is
+# real with migrations applied against it, health check passes. No Redis —
+# pg-boss (the worker's job queue) runs against the same Postgres instance.
+# Ollama is optional local AI (Phase 4+) and stays off by default.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: seo_platform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Bind only to localhost, never 0.0.0.0 — this is a single-server
+    # self-hosted deployment; other containers reach it over the internal
+    # Compose network, not this published port.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d seo_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seo_platform
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-placeholder-secret-not-for-prod}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seo_platform
+      WORKER_HEALTH_PORT: "3001"
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      NODE_ENV: production
+    # No published port — only other containers (or the app, later) need
+    # to reach this; it isn't a public service.
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Local AI provider (Phase 4+). Self-hosted and optional — the app and
+  # worker must work without it. Off by default; bring it up explicitly
+  # with `docker compose --profile ai up -d`.
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: ["ai"]
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+
+volumes:
+  postgres_data:
+  ollama_data:

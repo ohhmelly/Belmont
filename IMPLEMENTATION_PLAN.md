@@ -33,13 +33,15 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blo
 
 All docs live in `seo-platform/docs/`.
 
-## Phase 2 — Working Application Foundation
-- [ ] Scaffold chosen foundation (backend + frontend + DB) under `seo-platform/`
-- [ ] Docker Compose: app, db, worker, (crawler), (ollama)
-- [ ] `.env.example` with placeholders only, no real secrets
-- [ ] DB migrations: orgs, users, websites, crawl_jobs, findings, reports
-- [ ] Health check endpoints
-- [ ] App boots and renders a first page locally — proof of life
+## Phase 2 — Working Application Foundation ✅ COMPLETE (2026-10-21, independently re-verified by the coordinating session, not just the implementing agent)
+- [x] Scaffold chosen foundation (backend + frontend + DB) under `seo-platform/app/` — Next.js 16 App Router + TS, Postgres + Drizzle, Better Auth (email/password + `organization` plugin, Stripe deferred to Phase 6 per scope)
+- [x] Docker Compose: `app`, `postgres` (healthcheck, named volume, bound to 127.0.0.1 only), `worker` (pg-boss, no Redis), `ollama` (optional, `profiles: ["ai"]`, off by default)
+- [x] `.env.example` — placeholders only; verified no real secrets in `.env` (gitignored, dev-only local Postgres creds)
+- [x] DB migrations: real `drizzle-kit generate` SQL migration, applied — 11 tables confirmed via `psql \dt` (`users, sessions, accounts, verifications, organizations, members, invitations, websites, crawl_jobs, findings, reports`)
+- [x] Health check endpoint — re-ran myself: `curl /api/health` → `200 {"status":"ok","db":"connected"}` with Postgres up
+- [x] App boots and renders — re-ran myself: `npm run build` exit 0 (7 routes, clean TS); sign-up → session cookie; org-create → `role: "owner"`; `/dashboard` (authed) → 200 rendering org name + email + "Add website"; `/dashboard` (unauthed) → 307 to `/login`
+
+**Known gaps carried forward:** Stripe plugin deferred to Phase 6 (in scope); `npm audit` shows 8 moderate/8 high/1 critical advisories in the dependency tree — not fixed yet, flagged for a deliberate pass in Phase 7; Docker build was verified in this sandbox with a sandbox-only proxy workaround (documented by the implementing agent, not present in the committed Dockerfiles) — should be spot-checked with a plain `docker compose up --build` on the actual Linux target before going live.
 
 ## Phase 3 — Advanced Crawling
 - [ ] Crawler adapter interface + versioned normalized result schema

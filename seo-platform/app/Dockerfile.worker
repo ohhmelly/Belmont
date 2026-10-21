@@ -1,0 +1,21 @@
+# Background job worker image (the `worker` service in docker-compose.yml).
+# Same codebase as the Next.js app, different entrypoint (per
+# ARCHITECTURE.md) — runs src/worker.ts under tsx instead of `next start`.
+# Phase 2: pg-boss connects and reports healthy. Phase 5 adds real job
+# handlers (crawl/report/AI jobs) and the siteone-crawler binary.
+
+FROM node:22-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+FROM node:22-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
+COPY tsconfig.json ./
+COPY src ./src
+
+EXPOSE 3001
+CMD ["node_modules/.bin/tsx", "src/worker.ts"]

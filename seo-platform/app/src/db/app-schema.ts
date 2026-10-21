@@ -14,12 +14,26 @@ import {
   uuid,
   jsonb,
   varchar,
+  integer,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./auth-schema";
 
 /**
  * Websites a tenant has registered for crawling/SEO auditing.
- * Stub for Phase 3 (crawler integration) — only the shape is needed now.
+ *
+ * Ownership verification (Phase 3): `verificationToken` is generated when
+ * the website row is created; the user is shown it and asked to either
+ * publish it as a `<meta name="seo-platform-verification" content="...">`
+ * tag on their homepage or as a `_seo-platform-verify` DNS TXT record.
+ * `verifiedAt`/`verificationMethod` are set only once our own code has
+ * actually fetched the page (or looked up the TXT record) and found the
+ * token — see src/lib/ownership-verification.ts. This is a real, if
+ * basic, check: it is NOT a checkbox the user can tick themselves.
+ *
+ * Per spec, a manual one-off audit is allowed on an unverified site (see
+ * INTEGRATION_ARCHITECTURE.md for the rationale); verification is only
+ * required before scheduled/extensive scans, which are out of scope until
+ * Phase 5.
  */
 export const websites = pgTable("websites", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -27,6 +41,8 @@ export const websites = pgTable("websites", {
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   url: text("url").notNull(),
+  verificationToken: text("verification_token").notNull(),
+  verificationMethod: varchar("verification_method", { length: 16 }),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -35,7 +51,9 @@ export const websites = pgTable("websites", {
 
 /**
  * A single crawl run against a website.
- * Stub for Phase 3 — status lifecycle and worker wiring come later.
+ * `options` carries the crawl-time configuration (maxPages, maxDepth,
+ * jsRendering, and the test-only SSRF allowlist override — see
+ * crawl-safety.ts) so a job is fully reproducible from its stored row.
  */
 export const crawlJobs = pgTable("crawl_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -43,24 +61,43 @@ export const crawlJobs = pgTable("crawl_jobs", {
     .notNull()
     .references(() => websites.id, { onDelete: "cascade" }),
   status: varchar("status", { length: 32 }).notNull().default("pending"),
+  options: jsonb("options").notNull().default({}),
+  error: text("error"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
 
 /**
  * An individual technical-SEO issue surfaced by a crawl job.
- * Stub for Phase 3 — severity taxonomy and categories defined when the
- * SEO rule corpus is ported in that phase.
+ *
+ * Normalized finding schema (see docs/INTEGRATION_ARCHITECTURE.md): every
+ * finding, whether it comes directly from siteone-crawler's analyzer or
+ * from our own supplementary rule-engine pass, is mapped into this exact
+ * shape so the dashboard/report layer never needs to know which engine
+ * produced it. `sourceEngine` + `category` together say which: e.g.
+ * sourceEngine="siteone-crawler", category="broken_link" vs.
+ * sourceEngine="supplementary-rules", category="duplicate_title".
  */
 export const findings = pgTable("findings", {
   id: uuid("id").primaryKey().defaultRandom(),
   crawlJobId: uuid("crawl_job_id")
     .notNull()
     .references(() => crawlJobs.id, { onDelete: "cascade" }),
+  websiteId: uuid("website_id")
+    .notNull()
+    .references(() => websites.id, { onDelete: "cascade" }),
+  sourceEngine: varchar("source_engine", { length: 32 }).notNull(),
+  url: text("url").notNull(),
+  canonicalUrl: text("canonical_url"),
+  httpStatus: integer("http_status"),
   severity: varchar("severity", { length: 16 }).notNull(),
   category: varchar("category", { length: 64 }).notNull(),
   title: text("title").notNull(),
-  details: jsonb("details").notNull().default({}),
+  description: text("description").notNull().default(""),
+  evidence: jsonb("evidence").notNull().default({}),
+  discoveredAt: timestamp("discovered_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 /**

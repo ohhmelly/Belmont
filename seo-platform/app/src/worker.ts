@@ -3,15 +3,20 @@
  * entrypoint (per ARCHITECTURE.md). Docker Compose's `worker` service runs
  * this file instead of `next start`.
  *
- * Phase 2 scope: prove pg-boss (our Postgres-native job queue, chosen over
+ * Phase 2 built the pg-boss (our Postgres-native job queue, chosen over
  * Redis/BullMQ so a single-server self-hosted deployment needs no extra
- * infra) can actually start against Postgres, stay up, and report healthy.
- * Registering real job handlers (crawl jobs, report generation, AI calls)
- * is Phase 3+ work — there is nothing to process yet.
+ * infra) foundation: it starts against Postgres, stays up, and reports
+ * healthy, with no job handlers registered.
+ *
+ * Phase 3 registers the first real job type: `crawl-website` (see
+ * src/lib/jobs/crawl-website.ts and docs/INTEGRATION_ARCHITECTURE.md).
  */
 import "dotenv/config";
 import http from "node:http";
 import { PgBoss } from "pg-boss";
+import { CRAWL_WEBSITE_QUEUE } from "./lib/queue";
+import { handleCrawlWebsiteJob } from "./lib/jobs/crawl-website";
+import type { CrawlWebsiteJobData } from "./lib/queue";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -33,11 +38,15 @@ async function main() {
   });
 
   await boss.start();
+  await boss.createQueue(CRAWL_WEBSITE_QUEUE);
+  await boss.work<CrawlWebsiteJobData>(CRAWL_WEBSITE_QUEUE, async ([job]) => {
+    console.log(`[worker] crawl-website job ${job.id} starting for website ${job.data.websiteId}`);
+    await handleCrawlWebsiteJob(job.data);
+    console.log(`[worker] crawl-website job ${job.id} finished`);
+  });
   ready = true;
   console.log("[worker] pg-boss started and connected to Postgres.");
-  console.log(
-    "[worker] No job handlers registered yet (Phase 2 foundation) — idling."
-  );
+  console.log(`[worker] listening for "${CRAWL_WEBSITE_QUEUE}" jobs.`);
 }
 
 // A tiny, honest health endpoint: 200 only once pg-boss has actually

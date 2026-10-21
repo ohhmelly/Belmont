@@ -43,14 +43,16 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps carried forward:** Stripe plugin deferred to Phase 6 (in scope); `npm audit` shows 8 moderate/8 high/1 critical advisories in the dependency tree — not fixed yet, flagged for a deliberate pass in Phase 7; Docker build was verified in this sandbox with a sandbox-only proxy workaround (documented by the implementing agent, not present in the committed Dockerfiles) — should be spot-checked with a plain `docker compose up --build` on the actual Linux target before going live.
 
-## Phase 3 — Advanced Crawling
-- [ ] Crawler adapter interface + versioned normalized result schema
-- [ ] Integrate primary crawler engine
-- [ ] SSRF/private-network/localhost/DNS-rebinding/redirect/decompression-bomb protections
-- [ ] robots.txt + crawl-delay + rate limiting respect
-- [ ] Core technical SEO checks (titles, meta, headings, canonical, status codes, redirects, robots/sitemap, alt text, structured data, hreflang, thin/duplicate content)
-- [ ] Local fixture test sites with known defects
-- [ ] Automated crawler accuracy tests against fixtures
+## Phase 3 — Advanced Crawling ✅ COMPLETE (2026-10-21, independently re-verified)
+- [x] Crawler adapter interface + versioned normalized result schema — `app/src/lib/crawler-adapter.ts`, `finding-types.ts`; boundary documented in `docs/INTEGRATION_ARCHITECTURE.md`
+- [x] Integrate primary crawler engine — `siteone-crawler` built from source (`cargo build --release`, GitHub release download was unreachable from this sandbox), vendored at `seo-platform/vendor/siteone-crawler/` with LICENSE + NOTICE.md; verified `--version` → `2.7.0.20260925-dev`
+- [x] SSRF/private-network/localhost/DNS-rebinding/redirect/decompression-bomb protections — `app/src/lib/crawl-safety.ts`, read and reviewed directly (not just test output): rejects RFC1918/loopback/link-local/multicast/reserved (IPv4+IPv6), pins resolved IP for the actual connect (DNS-rebinding), re-validates every redirect hop, caps response bytes, disables auto-decompression, hard timeout. **Important finding from this phase: the siteone-crawler binary itself does NOT protect against SSRF on redirects** (verified empirically — a real run reached for `169.254.169.254`); fixed by scoping every invocation with `--include-regex` to the pre-validated origin so the binary can never fetch outside it
+- [x] robots.txt respect — fixture includes a disallowed path; confirmed zero findings reference it in a real crawl
+- [x] Core technical SEO checks — mapped from siteone-crawler's own analyzer (titles, meta, headings, status codes, redirects, broken links, robots/sitemap) plus a supplementary pass for gaps it doesn't cover (canonical conflicts, hreflang reciprocity, JSON-LD validity, orphan pages via sitemap diffing)
+- [x] Local fixture test sites with known defects — `seo-platform/fixtures/` (Express): redirect chain + loop, 404/500, duplicate/missing titles and meta descriptions, canonical conflict chain, robots.txt-disallowed path, 300-URL sitemap, malformed HTML, slow endpoint, and a malicious-redirect-to-169.254.169.254 fixture specifically to prove SSRF blocking
+- [x] Automated crawler accuracy tests against fixtures — independently re-ran myself: `npx vitest run` → **63/63 passing** (3 files), against the real binary + real fixture server + real Postgres, not mocked
+
+**Not verified / honest gaps:** JS-rendering (`--browser`) mode never actually exercised — no Chromium available in this sandbox; the binary supports it (`--browser` feature compiled in) and the adapter's fallback-to-static-crawl path runs cleanly when no browser is found, but real rendered-content detection is unverified and must be checked wherever Chromium is available (e.g. the Docker image, which bundles no browser yet either). Docker image for the `worker` service (now needs a repo-root build context to reach `vendor/`) was updated but never actually built in this phase — verify with `docker compose build worker` before relying on it. The vendored binary is committed as a ~39MB blob — acceptable for now per `NOTICE.md`'s own caveat, but should be rebuilt in a Docker build stage (or fetched as a pinned release) rather than carried in git history, before this repo is handed to anyone else to clone.
 
 ## Phase 4 — Reporting & AI
 - [ ] Ollama provider integration (optional, app works without it)

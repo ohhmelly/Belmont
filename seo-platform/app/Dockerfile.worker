@@ -1,21 +1,38 @@
 # Background job worker image (the `worker` service in docker-compose.yml).
 # Same codebase as the Next.js app, different entrypoint (per
 # ARCHITECTURE.md) — runs src/worker.ts under tsx instead of `next start`.
-# Phase 2: pg-boss connects and reports healthy. Phase 5 adds real job
-# handlers (crawl/report/AI jobs) and the siteone-crawler binary.
+#
+# Phase 2 proved pg-boss connects and reports healthy. Phase 3 adds the
+# real `crawl-website` job handler and the vendored siteone-crawler
+# binary (see docs/INTEGRATION_ARCHITECTURE.md). Because the binary lives
+# at <repo>/vendor/siteone-crawler/ (a sibling of app/, not inside it),
+# this image's build CONTEXT is the repo root, not ./app — see the
+# `worker` service's `context`/`dockerfile` in docker-compose.yml. All
+# COPY paths below are relative to that repo-root context.
+#
+# NOTE (flagged honestly, per the Phase 3 task spec): the vendored binary
+# is currently committed as a ~39MB build artifact under vendor/, copied
+# into this image as-is. That is not optimized for Docker layer caching
+# or image size — a later pass should either build it in a dedicated
+# Rust build stage here, or fetch a pinned upstream release during image
+# build, instead of copying a committed binary.
 
 FROM node:22-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY app/package.json app/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
 FROM node:22-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV CRAWLER_BIN_PATH=/opt/siteone-crawler/siteone-crawler
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY app/package.json ./
+COPY app/tsconfig.json ./
+COPY app/src ./src
+COPY vendor/siteone-crawler/siteone-crawler /opt/siteone-crawler/siteone-crawler
+COPY vendor/siteone-crawler/LICENSE /opt/siteone-crawler/LICENSE
+RUN chmod +x /opt/siteone-crawler/siteone-crawler
 
 EXPOSE 3001
 CMD ["node_modules/.bin/tsx", "src/worker.ts"]

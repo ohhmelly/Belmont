@@ -1,0 +1,13 @@
+{
+  "name": "seo-platform-fixtures",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local HTTP fixture site with deliberate, known SEO defects, used to validate crawler accuracy (Phase 3). Not part of the deployed app.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}

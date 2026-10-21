@@ -53,8 +53,12 @@ services:
 
   worker:
     build:
-      context: ./app
-      dockerfile: Dockerfile.worker
+      # Context is the repo root (not ./app) because this image also
+      # needs ../vendor/siteone-crawler/, a sibling of app/ — see
+      # Dockerfile.worker's header comment and
+      # docs/INTEGRATION_ARCHITECTURE.md.
+      context: .
+      dockerfile: app/Dockerfile.worker
     restart: unless-stopped
     depends_on:
       postgres:

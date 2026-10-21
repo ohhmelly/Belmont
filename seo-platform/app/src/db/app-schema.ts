@@ -15,6 +15,7 @@ import {
   jsonb,
   varchar,
   integer,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { organizations } from "./auth-schema";
 
@@ -34,6 +35,19 @@ import { organizations } from "./auth-schema";
  * INTEGRATION_ARCHITECTURE.md for the rationale); verification is only
  * required before scheduled/extensive scans, which are out of scope until
  * Phase 5.
+ *
+ * Phase 5 scheduling fields:
+ *  - `auditSchedule`: none | daily | weekly | monthly. Mirrored into a
+ *    pg-boss `schedule()` entry keyed by this website's id (see
+ *    src/lib/queue.ts#applyWebsiteSchedule) — pg-boss, not a hand-rolled
+ *    cron loop, owns firing it.
+ *  - `lastScheduledCrawlAt`: when a *scheduled* (non-manual) crawl was last
+ *    actually kicked off for this site, used to enforce a minimum interval
+ *    between scheduled crawls regardless of how aggressive the cron
+ *    expression is (see src/lib/jobs/scheduled-audit.ts).
+ *  - `lastHomepageEtag` / `lastHomepageLastModified`: cached conditional-
+ *    request validators from the homepage's last scheduled fetch, used for
+ *    the cheap "did anything change" pre-check before a full crawl.
  */
 export const websites = pgTable("websites", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -44,6 +58,13 @@ export const websites = pgTable("websites", {
   verificationToken: text("verification_token").notNull(),
   verificationMethod: varchar("verification_method", { length: 16 }),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  /** none | daily | weekly | monthly */
+  auditSchedule: varchar("audit_schedule", { length: 16 })
+    .notNull()
+    .default("none"),
+  lastScheduledCrawlAt: timestamp("last_scheduled_crawl_at", { withTimezone: true }),
+  lastHomepageEtag: text("last_homepage_etag"),
+  lastHomepageLastModified: text("last_homepage_last_modified"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -54,6 +75,15 @@ export const websites = pgTable("websites", {
  * `options` carries the crawl-time configuration (maxPages, maxDepth,
  * jsRendering, and the test-only SSRF allowlist override — see
  * crawl-safety.ts) so a job is fully reproducible from its stored row.
+ *
+ * `status` lifecycle (Phase 5 adds `cancelled`): pending -> running ->
+ * completed | failed | cancelled.
+ * `trigger` (Phase 5): "manual" (user clicked "Run crawl") or "scheduled"
+ * (pg-boss's own cron-based `schedule()` fired it) — shown in the job
+ * history/observability view.
+ * `pgBossJobId` (Phase 5): the id pg-boss's `send()` returned for this
+ * row's job, so a "Cancel" action can call `boss.cancel(queue, id)` on the
+ * exact underlying job.
  */
 export const crawlJobs = pgTable("crawl_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -61,8 +91,14 @@ export const crawlJobs = pgTable("crawl_jobs", {
     .notNull()
     .references(() => websites.id, { onDelete: "cascade" }),
   status: varchar("status", { length: 32 }).notNull().default("pending"),
+  /** manual | scheduled */
+  trigger: varchar("trigger", { length: 16 }).notNull().default("manual"),
+  pgBossJobId: text("pg_boss_job_id"),
   options: jsonb("options").notNull().default({}),
   error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
@@ -168,4 +204,35 @@ export const reports = pgTable("reports", {
     .notNull()
     .defaultNow(),
   filePath: text("file_path").notNull(),
+});
+
+/**
+ * An in-app notification (Phase 5), surfaced on the dashboard without any
+ * external service required. The default, always-on notifier
+ * (src/lib/notifications/notifier.ts) writes one of these whenever a
+ * *scheduled* crawl completes with at least one NEW finding (per the
+ * before/after diff in src/lib/findings-diff.ts) of medium severity or
+ * higher — a manual one-off crawl never generates noise here. An optional
+ * SMTP email send (gated on `SMTP_URL`, never required) rides alongside
+ * this row but never replaces it.
+ */
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  websiteId: uuid("website_id")
+    .notNull()
+    .references(() => websites.id, { onDelete: "cascade" }),
+  crawlJobId: uuid("crawl_job_id").references(() => crawlJobs.id, { onDelete: "cascade" }),
+  /** new_findings | ... (room to grow; new_findings is the only kind Phase 5 emits) */
+  type: varchar("type", { length: 32 }).notNull(),
+  /** critical | high | medium | low — the highest severity among the NEW findings that triggered this. */
+  severity: varchar("severity", { length: 16 }),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });

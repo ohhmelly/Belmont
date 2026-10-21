@@ -4,7 +4,14 @@ import { eq, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { websites, crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
-import { triggerCrawl, verifyWebsite, generateReport } from "../../actions";
+import { computeCrawlDiff } from "@/lib/findings-diff";
+import {
+  triggerCrawl,
+  verifyWebsite,
+  generateReport,
+  cancelCrawl,
+  setWebsiteSchedule,
+} from "../../actions";
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -59,6 +66,8 @@ export default async function WebsiteResultsPage({
         .where(eq(reports.crawlJobId, latestCompletedJob.id))
         .orderBy(desc(reports.generatedAt))
     : [];
+
+  const diff = await computeCrawlDiff(website.id);
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12 space-y-8">
@@ -115,6 +124,34 @@ export default async function WebsiteResultsPage({
       </section>
 
       <section className="rounded-md border border-foreground/10 p-4 space-y-3">
+        <h2 className="text-sm font-medium">Recurring audit schedule</h2>
+        <p className="text-xs text-foreground/60">
+          pg-boss fires a crawl automatically on this cadence (a cheap homepage staleness check and a
+          minimum-interval floor can still skip an individual run — see job history below for
+          &quot;scheduled&quot; entries).
+        </p>
+        <form action={setWebsiteSchedule} className="flex items-center gap-2">
+          <input type="hidden" name="websiteId" value={website.id} />
+          <select
+            name="cadence"
+            defaultValue={website.auditSchedule}
+            className="rounded-md border border-foreground/20 bg-transparent px-2 py-1.5 text-xs"
+          >
+            <option value="none">No schedule</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <button
+            type="submit"
+            className="rounded-md border border-foreground/20 px-3 py-1.5 text-xs hover:bg-foreground/5"
+          >
+            Save schedule
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-md border border-foreground/10 p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">Crawl jobs</h2>
           <form action={triggerCrawl}>
@@ -130,17 +167,111 @@ export default async function WebsiteResultsPage({
         {jobs.length === 0 ? (
           <p className="text-sm text-foreground/60">No crawl jobs yet.</p>
         ) : (
-          <ul className="divide-y divide-foreground/10 text-sm">
-            {jobs.map((job) => (
-              <li key={job.id} className="flex items-center justify-between py-2">
-                <span>{job.id.slice(0, 8)}</span>
-                <span className="text-foreground/60">{job.status}</span>
-                {job.error ? <span className="text-red-600 text-xs">{job.error}</span> : null}
-              </li>
-            ))}
-          </ul>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-foreground/10 text-left text-foreground/50">
+                <th className="py-1.5 pr-2">Job</th>
+                <th className="py-1.5 pr-2">Trigger</th>
+                <th className="py-1.5 pr-2">Status</th>
+                <th className="py-1.5 pr-2">Started</th>
+                <th className="py-1.5 pr-2">Finished</th>
+                <th className="py-1.5 pr-2">Error</th>
+                <th className="py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id} className="border-b border-foreground/5">
+                  <td className="py-1.5 pr-2 font-mono">{job.id.slice(0, 8)}</td>
+                  <td className="py-1.5 pr-2">{job.trigger}</td>
+                  <td className="py-1.5 pr-2">
+                    <span
+                      className={
+                        "rounded px-1.5 py-0.5 font-medium " +
+                        (job.status === "completed"
+                          ? "bg-green-100 text-green-700"
+                          : job.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : job.status === "cancelled"
+                              ? "bg-gray-200 text-gray-600"
+                              : "bg-blue-100 text-blue-700")
+                      }
+                    >
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-foreground/60">
+                    {job.startedAt ? job.startedAt.toISOString() : "—"}
+                  </td>
+                  <td className="py-1.5 pr-2 text-foreground/60">
+                    {job.finishedAt ? job.finishedAt.toISOString() : "—"}
+                  </td>
+                  <td className="py-1.5 pr-2 text-red-600">{job.error ?? ""}</td>
+                  <td className="py-1.5">
+                    {(job.status === "pending" || job.status === "running") && (
+                      <form action={cancelCrawl}>
+                        <input type="hidden" name="crawlJobId" value={job.id} />
+                        <input type="hidden" name="websiteId" value={website.id} />
+                        <button
+                          type="submit"
+                          className="rounded border border-red-300 px-2 py-0.5 text-red-600 hover:bg-red-50"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
+
+      {diff && (
+        <section className="rounded-md border border-foreground/10 p-4 space-y-3">
+          <h2 className="text-sm font-medium">Change since previous crawl</h2>
+          <p className="text-xs text-foreground/60">
+            Comparing the two most recent completed crawls, matched by category + affected URL.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <h3 className="mb-1 text-xs font-semibold text-red-600">New ({diff.newFindings.length})</h3>
+              <ul className="space-y-1 text-xs">
+                {diff.newFindings.slice(0, 15).map((f) => (
+                  <li key={f.id} className="text-foreground/70">
+                    [{f.severity}] {f.title} — <span className="break-all">{f.url}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="mb-1 text-xs font-semibold text-green-600">
+                Resolved ({diff.resolvedFindings.length})
+              </h3>
+              <ul className="space-y-1 text-xs">
+                {diff.resolvedFindings.slice(0, 15).map((f) => (
+                  <li key={f.id} className="text-foreground/70">
+                    [{f.severity}] {f.title} — <span className="break-all">{f.url}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="mb-1 text-xs font-semibold text-foreground/60">
+                Persisting ({diff.persistingFindings.length})
+              </h3>
+              <ul className="space-y-1 text-xs">
+                {diff.persistingFindings.slice(0, 15).map((f) => (
+                  <li key={f.id} className="text-foreground/70">
+                    [{f.severity}] {f.title} — <span className="break-all">{f.url}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium">

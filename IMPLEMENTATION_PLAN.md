@@ -67,11 +67,22 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps:** report-download route reuses Phase 2/3's minimal auth bar (any authenticated session, no per-org ownership check yet) — pre-existing, flagged for Phase 6/7, not newly introduced. The small 0.5B model occasionally produces lower-quality output (echoed a delimiter token literally in 2/29 rows in one run) — a model-quality limitation, not a security issue, since no code path treats model text as anything but inert stored data.
 
-## Phase 5 — Monitoring
-- [ ] Background job system (queue, retries, cancellation, persistence across restarts)
-- [ ] Scheduling (daily/weekly/monthly)
-- [ ] Historical comparison between crawls
-- [ ] Notifications (email optional/configurable)
+## Phase 5 — Monitoring ✅ COMPLETE (2026-10-21, independently re-verified)
+- [x] Background job system — pg-boss retry policy (`retryLimit:3, retryDelay:5, retryBackoff:true, expireInSeconds:900`), proven with real retry-then-succeed and real retry-exhaustion tests (the latter took ~90s of real backoff, not simulated)
+- [x] Job cancellation — `cancelCrawl` action, pg-boss `cancel()`, and the running subprocess is actually killed via an AbortSignal threaded into `crawler-adapter.ts`'s `execFileAsync`; every terminal DB write guards `status != 'cancelled'` so a late write can never overwrite a cancellation
+- [x] Persistence across restarts — **proven empirically**, not assumed: a real worker process SIGKILLed mid-crawl, confirmed stuck (`crawl_jobs` still "running", pg-boss job still "active") with no process alive, then a fresh worker started and pg-boss's own expiry/supervise mechanism retried and completed the job for real (`retryCount=1` visible in captured logs, independently re-run by me with the same result)
+- [x] Scheduling (daily/weekly/monthly) — pg-boss's own `schedule()`, cron `"0 3 * * *"`/`"0 3 * * 1"`/`"0 3 1 * *"`; proven firing with a 1-minute test cron against a real spawned worker process
+- [x] Configurable concurrency — `WORKER_CONCURRENCY` env var (default 2)
+- [x] Job history — crawl-jobs table on the website page (status, trigger, timestamps, error), structured JSON-line lifecycle logging in the worker
+- [x] Historical comparison between crawls — `findings-diff.ts`, stable key `category::url` (not finding id, which changes every crawl); proven with a real two-crawl integration test against mutated fixture content showing correct NEW/RESOLVED/PERSISTING classification
+- [x] Avoid unnecessary re-crawling — two modest, documented guards on scheduled (never manual) crawls: a hard minimum interval (default 6h) regardless of cron aggressiveness, plus a conditional ETag/Last-Modified homepage check; explicitly documented as "good enough, not full incremental crawling"
+- [x] Notifications (email optional/configurable) — in-app `notifications` row always written (no external dependency) when a scheduled crawl finds ≥1 new medium+ severity finding; optional SMTP via `SMTP_URL` that cleanly no-ops when unset (verified both halves: a real local SMTP catcher proved delivery works when configured, and the unset path was verified not to throw)
+
+**Found and fixed along the way:** `pg-boss` (a Phase 3 dependency) was silently missing its `@opentelemetry/api` peer dependency — would have crashed the worker on startup the moment Phase 5's code paths actually exercised it. Added the missing dependency.
+
+**Independently re-verified in this session:** `npx vitest run` → **112 passed, 2 skipped (114), exit 0**; `npm run build` → exit 0. The restart-recovery log sequence (worker killed → new worker resumes at `retryCount=1` → completes) was visible directly in my own re-run's output, not just the implementing agent's report.
+
+**Known gaps:** no single combined automated test proves "a real scheduled fire → real new findings → real notification row" as one unbroken chain — each link (diffing, notifier, worker wiring) is proven real individually, not the full chain end-to-end in one test. Deleting a website with a job still queued/retrying for it leaves an orphaned pg-boss job that fails cleanly on an FK violation (a sane terminal state, not stuck, but unhandled as a distinct case) — noted, not fixed, out of this phase's explicit scope.
 
 ## Phase 6 — SaaS Features
 - [ ] Auth (registration, login, password hashing, sessions)

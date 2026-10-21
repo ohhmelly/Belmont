@@ -54,6 +54,14 @@ export interface CrawlOptions {
   /** Test-only SSRF allowlist override — see crawl-safety.ts. Never set for a real user crawl. */
   allowlistOrigins?: string[];
   maxSupplementaryPages?: number;
+  /**
+   * Phase 5: an AbortSignal (typically a pg-boss job's own `job.signal`,
+   * which fires when the job is cancelled or its worker loses its claim)
+   * that aborts the crawler subprocess mid-run via Node's `execFile`
+   * `signal` option. Optional and backward compatible — omitted, nothing
+   * changes from Phase 3/4 behavior.
+   */
+  signal?: AbortSignal;
 }
 
 export interface CrawlAdapterResult {
@@ -408,6 +416,7 @@ export async function runCrawl(startUrl: string, options: CrawlOptions = {}): Pr
       await execFileAsync(binaryPath, buildArgs(useBrowser), {
         timeout: options.processTimeoutMs ?? 120_000,
         maxBuffer: 64 * 1024 * 1024,
+        signal: options.signal,
       });
       exitCode = 0;
     } catch (err: unknown) {

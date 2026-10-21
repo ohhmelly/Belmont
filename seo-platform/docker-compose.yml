@@ -66,6 +66,15 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seo_platform
       WORKER_HEALTH_PORT: "3001"
+      # Phase 5: how many crawl-website jobs this worker process runs at
+      # once (pg-boss localConcurrency). Each is a real siteone-crawler
+      # subprocess, so keep this modest on a small box. Default 2.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      # Phase 5, optional: SMTP connection string for the notifier's email
+      # leg (e.g. smtp://user:pass@host:587). Unset by default — the
+      # in-app notifications row is always written regardless; email is a
+      # no-op, never a failure, when this isn't set.
+      SMTP_URL: ${SMTP_URL:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       NODE_ENV: production
     # No published port — only other containers (or the app, later) need

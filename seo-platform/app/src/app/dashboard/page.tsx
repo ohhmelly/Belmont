@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { websites } from "@/db/app-schema";
+import { websites, notifications } from "@/db/app-schema";
 import { SignOutButton } from "./sign-out-button";
-import { addWebsite } from "./actions";
+import { addWebsite, markNotificationRead } from "./actions";
 
 export default async function DashboardPage() {
   const requestHeaders = await headers();
@@ -28,6 +28,15 @@ export default async function DashboardPage() {
         .where(eq(websites.organizationId, activeOrg.id))
     : [];
 
+  const unreadNotifications = activeOrg
+    ? await db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.organizationId, activeOrg.id), eq(notifications.isRead, false)))
+        .orderBy(desc(notifications.createdAt))
+        .limit(10)
+    : [];
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <header className="mb-10 flex items-center justify-between">
@@ -42,6 +51,29 @@ export default async function DashboardPage() {
           <SignOutButton />
         </div>
       </header>
+
+      {unreadNotifications.length > 0 && (
+        <section className="mb-8 space-y-2 rounded-md border border-amber-300/40 bg-amber-50/50 p-4 dark:bg-amber-950/20">
+          <h2 className="text-sm font-medium">Notifications</h2>
+          <ul className="space-y-2 text-sm">
+            {unreadNotifications.map((n) => (
+              <li key={n.id} className="flex items-start justify-between gap-3 rounded bg-background/50 p-2">
+                <div>
+                  <p className="font-medium">{n.title}</p>
+                  <p className="whitespace-pre-line text-xs text-foreground/60">{n.body}</p>
+                  <p className="text-xs text-foreground/40">{n.createdAt.toISOString()}</p>
+                </div>
+                <form action={markNotificationRead}>
+                  <input type="hidden" name="notificationId" value={n.id} />
+                  <button type="submit" className="whitespace-nowrap rounded border border-foreground/20 px-2 py-1 text-xs hover:bg-foreground/5">
+                    Mark read
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">

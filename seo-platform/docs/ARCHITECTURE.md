@@ -11,9 +11,12 @@ Build the application foundation **fresh**, not on top of any of the six
 candidate repos. Reuse three specific components via thin adapters.
 
 **Stack:** Next.js (App Router) + TypeScript · PostgreSQL + Drizzle ORM ·
-Better Auth (organizations + Stripe plugin) for accounts/billing · a
-Postgres-backed job queue (BullMQ) for crawl/report/AI jobs · Ollama as the
-default local AI provider via an OpenAI-compatible endpoint.
+Better Auth (organizations + Stripe plugin) for accounts/billing · **pg-boss**
+(a Postgres-native job queue — chosen over Redis-backed BullMQ specifically
+to avoid an extra infrastructure dependency on a self-hosted single-server
+target; jobs persist in the same Postgres instance and survive restarts)
+for crawl/report/AI jobs · Ollama as the default local AI provider via an
+OpenAI-compatible endpoint.
 
 ## Why no candidate repo qualifies as the foundation
 
@@ -81,8 +84,9 @@ inline in our source.
 
 ## Deployment shape (unchanged by this decision)
 
-Docker Compose: `app` (Next.js), `worker` (job queue consumer, same codebase
-different entrypoint), `postgres`, `ollama` (optional, local AI), and the
-`siteone-crawler` binary either baked into the `worker` image or run as its
-own minimal container invoked over a shared volume. Runs identically in
-Windows dev (Docker Desktop) and the Linux production target.
+Docker Compose: `app` (Next.js), `worker` (pg-boss job consumer, same
+codebase different entrypoint), `postgres`, `ollama` (optional, local AI),
+and the `siteone-crawler` binary baked into the `worker` image. No Redis or
+other extra infra — pg-boss uses the same Postgres instance. Runs
+identically in Windows dev (Docker Desktop) and the Linux production
+target.

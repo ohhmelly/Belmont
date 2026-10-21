@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -9,6 +9,8 @@ import { db } from "@/db";
 import { websites, crawlJobs } from "@/db/app-schema";
 import { generateVerificationToken, verifyByMetaTag, verifyByDnsTxt } from "@/lib/ownership-verification";
 import { enqueueCrawl } from "@/lib/queue";
+import { generateAndStoreRecommendations } from "@/lib/ai/generate-and-store";
+import { generateReportsForCrawlJob, ALL_FORMATS } from "@/lib/reports/generate";
 
 async function requireActiveOrgId(): Promise<string> {
   const requestHeaders = await headers();
@@ -82,6 +84,34 @@ export async function verifyWebsite(formData: FormData): Promise<void> {
       .set({ verifiedAt: new Date(), verificationMethod: result.method })
       .where(eq(websites.id, websiteId));
   }
+
+  revalidatePath(`/dashboard/websites/${websiteId}`);
+}
+
+/**
+ * Generate AI recommendations (if an AI provider is configured/reachable
+ * — degrades gracefully to template-based recommendations otherwise) and
+ * all four report formats (PDF/HTML/CSV/JSON) for a website's most
+ * recent COMPLETED crawl job. Phase 4.
+ */
+export async function generateReport(formData: FormData): Promise<void> {
+  const websiteId = String(formData.get("websiteId") ?? "");
+  const [website] = await db.select().from(websites).where(eq(websites.id, websiteId));
+  if (!website) throw new Error("Website not found");
+
+  const [latestCompletedJob] = await db
+    .select()
+    .from(crawlJobs)
+    .where(eq(crawlJobs.websiteId, websiteId))
+    .orderBy(desc(crawlJobs.finishedAt))
+    .limit(1);
+
+  if (!latestCompletedJob || latestCompletedJob.status !== "completed") {
+    throw new Error("No completed crawl job to report on yet. Run a crawl first.");
+  }
+
+  await generateAndStoreRecommendations(latestCompletedJob.id);
+  await generateReportsForCrawlJob(latestCompletedJob.id, ALL_FORMATS);
 
   revalidatePath(`/dashboard/websites/${websiteId}`);
 }

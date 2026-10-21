@@ -239,7 +239,18 @@ export interface SafeFetchResult {
  */
 export async function safeFetch(
   rawUrl: string,
-  options: CrawlSafetyOptions & { method?: string; headers?: Record<string, string> } = {}
+  options: CrawlSafetyOptions & {
+    method?: string;
+    headers?: Record<string, string>;
+    /**
+     * Optional request body (e.g. a JSON-encoded chat-completion request
+     * to a local Ollama server — see src/lib/ai/provider.ts). Only sent on
+     * the FIRST hop; a redirect response is never resent with a body
+     * (matches standard POST-redirect semantics and avoids ever replaying
+     * a request body at an address this module hasn't yet validated).
+     */
+    body?: string | Buffer;
+  } = {}
 ): Promise<SafeFetchResult> {
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -260,6 +271,7 @@ export async function safeFetch(
     const result = await singleRequest(url, target, {
       method: options.method,
       headers: options.headers,
+      body: hop === 0 ? options.body : undefined,
       timeoutMs,
       maxBytes,
     });
@@ -285,7 +297,13 @@ export async function safeFetch(
 function singleRequest(
   url: URL,
   target: ValidatedTarget,
-  opts: { method?: string; headers?: Record<string, string>; timeoutMs: number; maxBytes: number }
+  opts: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string | Buffer;
+    timeoutMs: number;
+    maxBytes: number;
+  }
 ): Promise<{
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -297,13 +315,36 @@ function singleRequest(
     const transport = url.protocol === "https:" ? https : http;
     // Pin the connect address: ignore whatever `hostname` resolves to at
     // connect time and always hand back the address we already validated.
-    const lookup: (
-      hostname: string,
-      options: dns.LookupOneOptions,
-      callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void
-    ) => void = (_hostname, _opts, callback) => {
-      callback(null, target.address, target.family);
-    };
+    //
+    // Node's `net.Socket` (Happy Eyeballs / `autoSelectFamily`, default on
+    // since Node 20) calls a custom `lookup` with `{ all: true }` and
+    // expects `callback(err, addresses[])` — NOT the single
+    // `callback(err, address, family)` form used when `all` is unset.
+    // Supporting only the single-address form (as earlier code here did)
+    // throws `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined` for
+    // every non-literal-IP hostname (confirmed against a real `fetch` to
+    // `example.com` and to a local Ollama server via `localhost` in this
+    // environment — literal-IP fixture URLs like `127.0.0.1:PORT` never
+    // exercised this path, which is why it was latent). Handle both forms.
+    const lookup = ((
+      _hostname: string,
+      optsOrFamily: dns.LookupOneOptions | dns.LookupAllOptions | number,
+      callback: (
+        err: NodeJS.ErrnoException | null,
+        addressOrAddresses: string | dns.LookupAddress[],
+        family?: number
+      ) => void
+    ) => {
+      const wantsAll =
+        typeof optsOrFamily === "object" && optsOrFamily !== null && (optsOrFamily as dns.LookupAllOptions).all === true;
+      if (wantsAll) {
+        callback(null, [{ address: target.address, family: target.family }]);
+      } else {
+        callback(null, target.address, target.family);
+      }
+    }) as unknown as http.RequestOptions["lookup"];
+
+    const bodyBuffer = opts.body !== undefined ? Buffer.from(opts.body) : undefined;
 
     const req = transport.request(
       {
@@ -317,6 +358,7 @@ function singleRequest(
         headers: {
           "User-Agent": "seo-platform-crawler/1.0 (+safety-preflight)",
           "Accept-Encoding": "identity", // never auto-decompress: removes the decompression-bomb vector
+          ...(bodyBuffer ? { "Content-Length": String(bodyBuffer.length) } : {}),
           ...opts.headers,
         },
       },
@@ -364,6 +406,7 @@ function singleRequest(
       if (err instanceof CrawlSafetyError) reject(err);
       else reject(err);
     });
-    req.end();
+    if (bodyBuffer) req.end(bodyBuffer);
+    else req.end();
   });
 }

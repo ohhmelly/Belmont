@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated report files (Phase 4) — tracked in Postgres (`reports` table), not git
+/storage/reports/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -3,8 +3,8 @@ import { headers } from "next/headers";
 import { eq, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { websites, crawlJobs, findings } from "@/db/app-schema";
-import { triggerCrawl, verifyWebsite } from "../../actions";
+import { websites, crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
+import { triggerCrawl, verifyWebsite, generateReport } from "../../actions";
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -40,6 +40,25 @@ export default async function WebsiteResultsPage({
     : [];
 
   siteFindings.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+
+  const latestCompletedJob = jobs.find((j) => j.status === "completed") ?? null;
+
+  const recommendations = latestCompletedJob
+    ? await db
+        .select()
+        .from(aiRecommendations)
+        .where(eq(aiRecommendations.crawlJobId, latestCompletedJob.id))
+    : [];
+  const auditSummary = recommendations.find((r) => r.kind === "audit_summary") ?? null;
+  const devTasks = recommendations.filter((r) => r.kind === "dev_task");
+
+  const siteReports = latestCompletedJob
+    ? await db
+        .select()
+        .from(reports)
+        .where(eq(reports.crawlJobId, latestCompletedJob.id))
+        .orderBy(desc(reports.generatedAt))
+    : [];
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12 space-y-8">
@@ -165,6 +184,72 @@ export default async function WebsiteResultsPage({
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      <section className="rounded-md border border-foreground/10 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium">AI recommendations &amp; reports</h2>
+          <form action={generateReport}>
+            <input type="hidden" name="websiteId" value={website.id} />
+            <button
+              type="submit"
+              disabled={!latestCompletedJob}
+              className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-40"
+            >
+              Generate report
+            </button>
+          </form>
+        </div>
+        {!latestCompletedJob ? (
+          <p className="text-sm text-foreground/60">Run a crawl to completion first.</p>
+        ) : (
+          <>
+            {auditSummary ? (
+              <div className="rounded bg-foreground/5 p-3 text-sm space-y-1">
+                <p>{auditSummary.body}</p>
+                <p className="text-xs text-foreground/50">
+                  Source:{" "}
+                  {(auditSummary.metadata as { generatedBy?: string })?.generatedBy === "ollama"
+                    ? "AI-generated (local Ollama model)"
+                    : (auditSummary.metadata as { generatedBy?: string })?.generatedBy === "stub"
+                      ? "placeholder (no AI model configured)"
+                      : "template (AI unavailable)"}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-foreground/60">No AI summary yet — click &quot;Generate report&quot;.</p>
+            )}
+
+            {devTasks.length > 0 && (
+              <div className="space-y-1">
+                <h3 className="text-xs font-medium text-foreground/60">Developer remediation tasks</h3>
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  {devTasks.map((t) => (
+                    <li key={t.id}>{t.body}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {siteReports.length > 0 && (
+              <div className="space-y-1">
+                <h3 className="text-xs font-medium text-foreground/60">Downloadable reports</h3>
+                <ul className="flex flex-wrap gap-2 text-sm">
+                  {[...new Map(siteReports.map((r) => [r.format, r])).values()].map((r) => (
+                    <li key={r.id}>
+                      <a
+                        href={`/api/reports/${r.id}`}
+                        className="rounded-md border border-foreground/20 px-3 py-1.5 text-xs uppercase hover:bg-foreground/5"
+                      >
+                        {r.format} ({r.healthScore ?? "?"}/100)
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </section>
     </main>

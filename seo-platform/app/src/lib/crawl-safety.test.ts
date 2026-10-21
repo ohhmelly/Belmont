@@ -236,6 +236,21 @@ describe("safeFetch (against a local test server)", () => {
     );
   });
 
+  it("fetches a REAL non-literal-IP public hostname end to end (regression: Node's Happy-Eyeballs `lookup({all:true})` contract)", async () => {
+    // Every other safeFetch test above uses a literal `127.0.0.1` fixture
+    // address, which never exercises Node's DNS-lookup/connect path at
+    // all (literal IPs skip `lookup` entirely). A real hostname does
+    // exercise it, and Node 20+'s `autoSelectFamily` (on by default)
+    // calls a custom `lookup` option with `{ all: true }`, expecting
+    // `callback(err, addresses[])` — not the single
+    // `callback(err, address, family)` form. This test is a direct
+    // regression test for that bug (found while wiring up the Phase 4 AI
+    // provider's call to a real Ollama server over `localhost`).
+    const result = await safeFetch("https://example.com/", { timeoutMs: 10_000 });
+    expect(result.status).toBe(200);
+    expect(result.body.length).toBeGreaterThan(0);
+  }, 15_000);
+
   it("times out on a slow response", async () => {
     await withServer(
       (req, res) => {

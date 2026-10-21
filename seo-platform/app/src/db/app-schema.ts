@@ -101,15 +101,69 @@ export const findings = pgTable("findings", {
 });
 
 /**
- * A generated report artifact for a website.
- * Stub for Phase 4 (reporting & AI) — only the shape is needed now.
+ * AI-generated recommendations for a crawl job (Phase 4).
+ *
+ * Hard requirements this table enforces/supports (see
+ * docs/REPORTING.md and src/lib/ai/recommendation-engine.ts):
+ *  - `findingIds` is a JSON array of real `findings.id` UUIDs this
+ *    recommendation is grounded in. It is populated by OUR code from
+ *    the actual finding rows handed to the engine, never by parsing
+ *    anything the AI model emitted — so a recommendation can never cite
+ *    a finding that doesn't exist, even if the model hallucinates.
+ *  - `priority` is derived from the grounding finding(s)' own severity
+ *    plus a small, documented category-impact heuristic (see
+ *    computePriority in recommendation-engine.ts) — never a fabricated
+ *    score.
+ *  - `body` is model-generated prose when an AI provider was available,
+ *    or a deterministic template when it was not — `metadata.generatedBy`
+ *    says which, so nothing here is presented as AI-verified when it
+ *    wasn't.
+ */
+export const aiRecommendations = pgTable("ai_recommendations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  crawlJobId: uuid("crawl_job_id")
+    .notNull()
+    .references(() => crawlJobs.id, { onDelete: "cascade" }),
+  websiteId: uuid("website_id")
+    .notNull()
+    .references(() => websites.id, { onDelete: "cascade" }),
+  /**
+   * finding_explanation | title_meta_suggestion | internal_linking |
+   * structured_data | dev_task | audit_summary
+   */
+  kind: varchar("kind", { length: 32 }).notNull(),
+  /** Real `findings.id` UUIDs this recommendation is grounded in. Never empty. */
+  findingIds: jsonb("finding_ids").notNull().default([]),
+  /** critical | high | medium | low — derived, see computePriority(). Null only for audit_summary. */
+  priority: varchar("priority", { length: 16 }),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  /** { generatedBy: "ollama"|"template-fallback", model?, suggestedTitle?, suggestedMetaDescription?, ... } */
+  metadata: jsonb("metadata").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * A generated report artifact for a website (Phase 4).
+ *
+ * One `crawl_jobs` row can have up to 4 report rows (one per format);
+ * `filePath` is relative to the app's report storage root
+ * (STORAGE_REPORTS_DIR / app/storage/reports by default — see
+ * src/lib/reports/generate.ts), never an absolute path, so moving the
+ * storage root doesn't invalidate existing rows.
  */
 export const reports = pgTable("reports", {
   id: uuid("id").primaryKey().defaultRandom(),
   websiteId: uuid("website_id")
     .notNull()
     .references(() => websites.id, { onDelete: "cascade" }),
+  crawlJobId: uuid("crawl_job_id")
+    .notNull()
+    .references(() => crawlJobs.id, { onDelete: "cascade" }),
   format: varchar("format", { length: 16 }).notNull(),
+  healthScore: integer("health_score"),
   generatedAt: timestamp("generated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

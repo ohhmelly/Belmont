@@ -54,12 +54,18 @@ All docs live in `seo-platform/docs/`.
 
 **Not verified / honest gaps:** JS-rendering (`--browser`) mode never actually exercised — no Chromium available in this sandbox; the binary supports it (`--browser` feature compiled in) and the adapter's fallback-to-static-crawl path runs cleanly when no browser is found, but real rendered-content detection is unverified and must be checked wherever Chromium is available (e.g. the Docker image, which bundles no browser yet either). Docker image for the `worker` service (now needs a repo-root build context to reach `vendor/`) was updated but never actually built in this phase — verify with `docker compose build worker` before relying on it. The vendored binary is committed as a ~39MB blob — acceptable for now per `NOTICE.md`'s own caveat, but should be rebuilt in a Docker build stage (or fetched as a pinned release) rather than carried in git history, before this repo is handed to anyone else to clone.
 
-## Phase 4 — Reporting & AI
-- [ ] Ollama provider integration (optional, app works without it)
-- [ ] AI recommendation engine tied to concrete findings (no fabricated metrics)
-- [ ] Report generator: PDF/HTML/CSV/JSON
-- [ ] Health-score calculation (documented, transparent)
-- [ ] Verify report accuracy against known fixture findings
+## Phase 4 — Reporting & AI ✅ COMPLETE (2026-10-21, independently re-verified)
+- [x] Ollama provider integration — **real**, not stubbed: Ollama 0.5.1 installed in-session, `qwen2.5:0.5b` pulled, real round trips through `safeFetch`. App degrades gracefully to a deterministic template when AI is unavailable (tested explicitly)
+- [x] AI recommendation engine tied to concrete findings — `findingIds` attached by our own code from real finding objects, never parsed from model output, so a hallucinated id is architecturally impossible (verified by reading `generate-and-store.ts`/`recommendation-engine.ts` directly)
+- [x] No fabricated metrics — enforced in two independent layers: prompt-level instruction + a code-level regex guard (`violatesMetricPolicy`) that discards and replaces any AI response mentioning search volume/backlinks/ranking position/etc. **This guard exists because a real run caught a real violation** — one of 29 real recommendations from the live model mentioned "search volume" despite the system prompt forbidding it; documented transparently in `docs/AI_AND_SCORING.md` rather than hidden
+- [x] Crawled content treated as untrusted data — delimited with explicit markers in the prompt; adversarial fixture page added (`/prompt-injection`, literal "Ignore previous instructions...") and run against the real model; did not fully hijack output, and grounding held regardless
+- [x] Report generator: PDF (`pdfkit`, no Chromium needed)/HTML/CSV/JSON, all from one shared payload — independently re-validated every format myself: PDF signature + real page structure, CSV row count (44 = 43 findings + header), JSON health-score math checks out exactly (3 critical×8 + 4 high×4 + 6 medium×2 + 30 low×0.5 = 67 deducted → 33), HTML well-formed
+- [x] Health-score calculation — documented formula in `docs/AI_AND_SCORING.md` and code comments, deterministic, explicitly not a ranking/traffic guarantee
+- [x] Verified against real fixture findings — independently re-ran `npx vitest run` myself: **89/89 passing** (incl. 2 new test files, real Ollama round trips with 60s timeouts, ~4.7 min real wall-clock), `npm run build` exit 0
+
+**Also found and fixed in this phase:** a pre-existing latent bug in Phase 3's `crawl-safety.ts` — Node 20+'s Happy-Eyeballs `autoSelectFamily` calls the custom DNS `lookup` option in a form (`{all:true}` → array callback) the code didn't handle, breaking `safeFetch` for every non-literal-IP hostname (only ever exercised with literal `127.0.0.1` fixture URLs before now). Fixed with a regression test; reviewed and confirmed sound.
+
+**Known gaps:** report-download route reuses Phase 2/3's minimal auth bar (any authenticated session, no per-org ownership check yet) — pre-existing, flagged for Phase 6/7, not newly introduced. The small 0.5B model occasionally produces lower-quality output (echoed a delimiter token literally in 2/29 rows in one run) — a model-quality limitation, not a security issue, since no code path treats model text as anything but inert stored data.
 
 ## Phase 5 — Monitoring
 - [ ] Background job system (queue, retries, cancellation, persistence across restarts)

@@ -17,19 +17,21 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blo
 - [x] Get confirmation on repo layout decision → `seo-platform/` subdirectory
 - [x] Set up session TaskCreate tracking mirroring phases below
 
-## Phase 1 — Research & Architecture
-- [ ] Inspect `IamRamgarhia/All-In-One-Free-SEO-Tool` (stack, license, activity, tests)
-- [ ] Inspect `janreges/siteone-crawler` (stack, license, activity, tests)
-- [ ] Inspect `PhialsBasement/LibreCrawl` (stack, license, activity, tests)
-- [ ] Inspect `StJudeWasHere/seonaut` (stack, license, activity, tests)
-- [ ] Inspect `crawlseo/crawlseo` (optional reference)
-- [ ] Inspect `every-app/open-seo` (optional reference)
-- [ ] Record license obligations for anything reused (MIT/Apache/GPL compatibility check)
-- [ ] Verify documentation claims against actual source where feasible
-- [ ] Write `ARCHITECTURE.md` — chosen foundation + rationale
-- [ ] Write `REVERSE_ENGINEERING.md` — per-repo findings (architecture, crawling algo, SEO rules, DB schema, auth, reports, tests, security)
-- [ ] Write `FEATURE_COMPARISON.md` — feature matrix across all 6 repos
-- [ ] Write `INTEGRATION_ARCHITECTURE.md` — adapter boundaries, common crawl-result schema
+## Phase 1 — Research & Architecture ✅ COMPLETE (2026-10-21)
+- [x] Inspect `IamRamgarhia/All-In-One-Free-SEO-Tool` (stack, license, activity, tests)
+- [x] Inspect `janreges/siteone-crawler` (stack, license, activity, tests)
+- [x] Inspect `PhialsBasement/LibreCrawl` (stack, license, activity, tests)
+- [x] Inspect `StJudeWasHere/seonaut` (stack, license, activity, tests)
+- [x] Inspect `crawlseo/crawlseo`
+- [x] Inspect `every-app/open-seo`
+- [x] Record license obligations for anything reused — all 6 are MIT; see `ARCHITECTURE.md` § License compliance
+- [x] Verify documentation claims against actual source (found: LibreCrawl's "multi-tenancy" is broken — all users get `tier='admin'`; crawlseo's "AI agent ready" overstates an MCP-only integration; open-seo's self-host path is "partial" due to Cloudflare-proprietary runtime coupling)
+- [x] Write `ARCHITECTURE.md` — decision: build fresh (Next.js/TS/Postgres/Drizzle/Better Auth/BullMQ), reuse siteone-crawler as subprocess, Better Auth lib, SEO rule concepts, crawlseo's egress-allowlist pattern
+- [x] Write `REVERSE_ENGINEERING.md` — per-repo findings
+- [x] Write `FEATURE_COMPARISON.md` — feature matrix across all 6 repos
+- [ ] Write `INTEGRATION_ARCHITECTURE.md` — adapter boundaries, common crawl-result schema (moved to Phase 3, where the crawler adapter is actually built)
+
+All docs live in `seo-platform/docs/`.
 
 ## Phase 2 — Working Application Foundation
 - [ ] Scaffold chosen foundation (backend + frontend + DB) under `seo-platform/`

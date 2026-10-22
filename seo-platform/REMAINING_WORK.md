@@ -6,7 +6,27 @@ left, superseding the scattered "known gaps" notes in `IMPLEMENTATION_PLAN.md`
 the current punch list). Nothing here is hidden or downplayed — see each
 phase's commit history for full detail on how an item was found.
 
+## Project direction (2026-10-22)
+
+The project owner has decided this is **their own internal tool for
+fulfilling freelance (Fiverr-style) SEO audit gigs, not a public
+multi-tenant SaaS.** This deprioritizes (not removes — the code stays,
+it's harmless unused) going live with Stripe, public sign-up hardening,
+and org-vs-org edge cases beyond what's already fixed. It raises the
+priority of report output quality (the actual client deliverable) and
+having the stack reliably runnable on demand. Next planned work: a
+design/polish pass on the PDF/HTML reports specifically (see
+`docs/DESIGN_UPDATES.md` item 8), not deployment or further SaaS features.
+
 ## Fixed in this session (2026-10-22, on a real Windows dev machine)
+
+- **`scripts/dev-stop.ps1` itself had the same orphan-process bug class
+  it was written to prevent**, on the app server this time: it matched
+  the `npm run start` wrapper's command line but not the actual `next
+  start` child process's command line, so a stale pre-Phase-6 build kept
+  silently serving on port 3000 and 404ing the new `/dashboard/billing`
+  route. Fixed to also kill by current port ownership (3000/3001/4100),
+  not just command-line pattern match.
 
 - **Crawler never ran on Windows.** The Phase 3 adapter hardcoded the path
   to the Linux ELF binary built in the Linux sandbox; on Windows the

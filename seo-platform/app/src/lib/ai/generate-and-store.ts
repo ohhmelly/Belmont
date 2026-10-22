@@ -11,7 +11,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { crawlJobs, findings, aiRecommendations, websites } from "@/db/app-schema";
-import { createAiProviderFromEnv } from "./provider";
+import { createAiProviderFromEnv, StubAiProvider } from "./provider";
 import { generateRecommendations, type EngineFinding } from "./recommendation-engine";
 
 export interface GenerateAndStoreResult {
@@ -21,7 +21,24 @@ export interface GenerateAndStoreResult {
   aiAvailable: boolean;
 }
 
-export async function generateAndStoreRecommendations(crawlJobId: string): Promise<GenerateAndStoreResult> {
+export interface GenerateAndStoreOptions {
+  /**
+   * Phase 6 plan gating: when false, never attempts a real AI-provider
+   * call regardless of OLLAMA_BASE_URL — always uses the deterministic
+   * template (StubAiProvider), because this org's plan doesn't include
+   * AI recommendations. The report is still generated in full; only the
+   * AI-vs-template choice changes. Defaults to true (unrestricted) so
+   * existing callers/tests that don't pass this keep working exactly as
+   * before.
+   */
+  allowAiProvider?: boolean;
+}
+
+export async function generateAndStoreRecommendations(
+  crawlJobId: string,
+  options: GenerateAndStoreOptions = {}
+): Promise<GenerateAndStoreResult> {
+  const allowAiProvider = options.allowAiProvider ?? true;
   const [job] = await db.select().from(crawlJobs).where(eq(crawlJobs.id, crawlJobId));
   if (!job) throw new Error(`crawl job ${crawlJobId} not found`);
 
@@ -39,7 +56,7 @@ export async function generateAndStoreRecommendations(crawlJobId: string): Promi
     evidence: (r.evidence ?? {}) as Record<string, unknown>,
   }));
 
-  const provider = createAiProviderFromEnv();
+  const provider = allowAiProvider ? createAiProviderFromEnv() : new StubAiProvider();
   const aiAvailable = provider.isConfigured() && (await provider.isAvailable());
 
   const drafts = await generateRecommendations(crawlJobId, website.id, website.url, engineFindings, provider);

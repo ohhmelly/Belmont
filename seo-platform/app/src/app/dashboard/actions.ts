@@ -15,6 +15,12 @@ import {
   requireWebsiteInActiveOrg,
   requireNotificationInActiveOrg,
 } from "@/lib/tenant";
+import {
+  assertCanAddWebsite,
+  assertCanRunManualCrawl,
+  assertCanSchedule,
+  isAiRecommendationsAllowed,
+} from "@/lib/billing/quota";
 
 /**
  * Add a website and immediately enqueue a one-off manual crawl.
@@ -29,6 +35,13 @@ export async function addWebsite(formData: FormData): Promise<void> {
   const url = String(formData.get("url") ?? "").trim();
   if (!url) throw new Error("URL is required");
   new URL(url); // throws on malformed input before it ever reaches the DB/crawler
+
+  // Phase 6 plan/quota enforcement: check BOTH the website-count limit
+  // and the manual-crawl limit (since adding a website immediately
+  // enqueues one) before creating anything, so a plan-exceeding request
+  // never leaves a half-created website with no crawl behind it.
+  await assertCanAddWebsite(organizationId);
+  await assertCanRunManualCrawl(organizationId);
 
   // Fail fast with a clear message instead of creating a website that is
   // structurally guaranteed to fail its first crawl: a private/loopback/
@@ -69,6 +82,7 @@ export async function addWebsite(formData: FormData): Promise<void> {
 export async function triggerCrawl(formData: FormData): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
   const website = await requireWebsiteInActiveOrg(websiteId);
+  await assertCanRunManualCrawl(website.organizationId);
 
   const [job] = await db
     .insert(crawlJobs)
@@ -126,7 +140,8 @@ export async function setWebsiteSchedule(formData: FormData): Promise<void> {
   if (!["none", "daily", "weekly", "monthly"].includes(cadence)) {
     throw new Error("Invalid cadence");
   }
-  await requireWebsiteInActiveOrg(websiteId);
+  const website = await requireWebsiteInActiveOrg(websiteId);
+  await assertCanSchedule(website.organizationId, cadence);
 
   await db.update(websites).set({ auditSchedule: cadence }).where(eq(websites.id, websiteId));
   await applyWebsiteSchedule(websiteId, cadence);
@@ -170,7 +185,7 @@ export async function verifyWebsite(formData: FormData): Promise<void> {
  */
 export async function generateReport(formData: FormData): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
-  await requireWebsiteInActiveOrg(websiteId);
+  const website = await requireWebsiteInActiveOrg(websiteId);
 
   const [latestCompletedJob] = await db
     .select()
@@ -183,7 +198,12 @@ export async function generateReport(formData: FormData): Promise<void> {
     throw new Error("No completed crawl job to report on yet. Run a crawl first.");
   }
 
-  await generateAndStoreRecommendations(latestCompletedJob.id);
+  // Phase 6 plan gating: Professional/Agency get real AI-generated
+  // recommendations when Ollama is configured/reachable; Free/Starter
+  // always get the deterministic template instead (never nothing — see
+  // GenerateAndStoreOptions in generate-and-store.ts).
+  const allowAiProvider = await isAiRecommendationsAllowed(website.organizationId);
+  await generateAndStoreRecommendations(latestCompletedJob.id, { allowAiProvider });
   await generateReportsForCrawlJob(latestCompletedJob.id, ALL_FORMATS);
 
   revalidatePath(`/dashboard/websites/${websiteId}`);

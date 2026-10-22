@@ -48,7 +48,12 @@ export default async function DashboardPage() {
         </div>
         <div className="text-right">
           <p className="text-sm">{session.user.email}</p>
-          <SignOutButton />
+          <div className="mt-1 flex items-center justify-end gap-3">
+            <Link href="/dashboard/billing" className="text-xs text-foreground/60 hover:underline">
+              Plan &amp; billing
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
       </header>
 

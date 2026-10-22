@@ -25,7 +25,9 @@ fixed real bugs no amount of sandbox testing would have caught:
 - `npm install` failed outright on a fresh clone (missing `.npmrc`,
   fixed earlier) and `npm audit` dropped from 18 vulnerabilities (1
   critical) to 9 (0 critical)
-- A real process-management footgun around restarting the worker
+- A real process-management footgun around restarting the worker (and a
+  second instance of the SAME category of bug found later, in the app
+  server this time — see Phase 6 note below)
 
 Full detail, plus what's still open, is in `REMAINING_WORK.md`. A
 `docs/DESIGN_UPDATES.md` punch list was also written for the still-
@@ -105,12 +107,18 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps:** no single combined automated test proves "a real scheduled fire → real new findings → real notification row" as one unbroken chain — each link (diffing, notifier, worker wiring) is proven real individually, not the full chain end-to-end in one test. Deleting a website with a job still queued/retrying for it leaves an orphaned pg-boss job that fails cleanly on an FK violation (a sane terminal state, not stuck, but unhandled as a distinct case) — noted, not fixed, out of this phase's explicit scope.
 
-## Phase 6 — SaaS Features
-- [ ] Auth (registration, login, password hashing, sessions)
-- [ ] Orgs, roles, members, tenant isolation
-- [ ] Plans/quotas (Free/Starter/Professional/Agency — configurable, not validated market prices)
-- [ ] Stripe adapter in test mode (webhook signature verification, idempotency) or mock if no credentials
-- [ ] Billing explicitly stays in test mode — no live payments without approval
+## Phase 6 — SaaS Features ✅ COMPLETE (2026-10-22, independently re-verified)
+- [x] Auth (registration, login, password hashing, sessions) — done in Phase 2
+- [x] Orgs, roles, members, tenant isolation — orgs/roles from Phase 2; the tenant-isolation *gap* found and fixed in this session's real-machine pass (see note above) is what makes this a genuine "done," not just "present"
+- [x] Plans/quotas — four plans (Free/Starter/Professional/Agency) as one config object, explicitly labeled configurable placeholders, not researched pricing; real enforcement (website count, manual-crawl monthly limit, scheduling gate, AI-recommendations gate) wired into the actual `addWebsite`/`triggerCrawl`/`setWebsiteSchedule`/`generateReport` actions, not just computed and ignored
+- [x] Stripe adapter in test mode — real `StripeProvider` (webhook signature verification via Stripe's own SDK, idempotency via a `processed_webhook_events` ledger) behind a `BillingProvider` interface, with a `MockBillingProvider` used automatically since no real Stripe keys exist yet (the project owner's explicit choice — this is now an internal tool, not a public SaaS, so Stripe going live is deprioritized indefinitely, not just "not done yet")
+- [x] Billing explicitly stays in test mode — `StripeProvider`'s constructor refuses any key that isn't `sk_test_...` outside `NODE_ENV=test`, verified by reading the source directly
+
+**Independently re-verified in this session:** `npx tsc --noEmit` clean, `npm run build` exit 0 (new `/dashboard/billing` and `/api/webhooks/stripe` routes present), `npx vitest run` → 141 passed, 2 skipped (Ollama, expected), 1 failed — the same pre-existing flaky test documented since before this phase (`reports/generate.test.ts:83`, confirmed unrelated, passes in isolation). Billing page confirmed rendering real, correct usage data in a live authenticated browser session (an account already over its Free-tier manual-crawl quota from earlier testing displayed correctly without crashing).
+
+**Found and fixed along the way:** a second instance of the exact process-orphaning bug class from Phase 5/the real-machine pass — this time in `scripts/dev-stop.ps1` itself. It matched the `npm run start` wrapper's command line but not the actual `next start` child process's command line (`node .../next/dist/bin/next start`, which doesn't contain "npm run start" as a substring), so a stale pre-Phase-6 server silently kept serving the old build and returning confusing 404s for the new `/dashboard/billing` route — not a billing-code bug at all. Fixed `dev-stop.ps1` to also kill by whoever currently owns ports 3000/3001/4100, not just by command-line pattern match.
+
+**What could not be verified:** real Stripe network calls (`createCheckoutSession`/`createPortalSession`) and a real webhook delivery from Stripe's actual servers — no real Stripe test keys exist in this environment. Signature verification and idempotency logic were verified for real using Stripe's own offline test helpers (`generateTestHeaderString`), which doesn't require a live account.
 
 ## Phase 7 — Security & QA
 - [ ] Full test suite: unit, integration, API, crawler, migrations, auth, tenant isolation, reports, jobs, billing webhooks, E2E, security regressions

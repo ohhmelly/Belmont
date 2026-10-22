@@ -10,6 +10,27 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blo
 
 ---
 
+## Real-machine testing pass (2026-10-22, Windows dev machine, Remote Control)
+
+The app was actually installed and run on a real Windows 11 development
+machine (not the Linux build sandbox) for the first time, per this
+project's own "Windows dev / Linux prod" requirement. This surfaced and
+fixed real bugs no amount of sandbox testing would have caught:
+
+- **Crawler didn't run at all on Windows** (vendored binary was Linux-only)
+- **Tenant isolation gap** — any authenticated user could view/act on any
+  other org's websites/reports by guessing a UUID (now fixed everywhere)
+- SSRF-blocked crawls showed a confusing "finding" instead of failing
+  fast with a clear message at add-website time
+- `npm install` failed outright on a fresh clone (missing `.npmrc`,
+  fixed earlier) and `npm audit` dropped from 18 vulnerabilities (1
+  critical) to 9 (0 critical)
+- A real process-management footgun around restarting the worker
+
+Full detail, plus what's still open, is in `REMAINING_WORK.md`. A
+`docs/DESIGN_UPDATES.md` punch list was also written for the still-
+not-started premium UI/UX pass (Part 3/5 of the original brief).
+
 ## Phase 0 — Housekeeping (this step)
 - [x] Inspect working directory and git history
 - [x] Identify conflict between existing repo content and new project scope

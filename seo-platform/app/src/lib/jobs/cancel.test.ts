@@ -8,7 +8,7 @@
  * was cancelled (the `ne(status, 'cancelled')` guard added to
  * src/lib/jobs/crawl-website.ts).
  */
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
 import { eq } from "drizzle-orm";
@@ -17,8 +17,27 @@ import { db, pool } from "@/db";
 import { organizations } from "@/db/auth-schema";
 import { websites, crawlJobs } from "@/db/app-schema";
 import { enqueueCrawl, getBoss, CRAWL_WEBSITE_QUEUE } from "@/lib/queue";
-import { cancelCrawl } from "@/app/dashboard/actions";
 import { startFixtureServer, type FixtureServerHandle } from "@/lib/test-support/fixture-server";
+
+// cancelCrawl now goes through requireWebsiteInActiveOrg (tenant isolation
+// fix), which needs a real Better Auth session + Next.js request headers
+// neither of which exist when a server action is invoked directly from a
+// unit test rather than a real HTTP request. Mocking just the "who is
+// signed in" layer (not src/lib/tenant.ts itself) means the real
+// org-ownership check still runs for real against this test's own org/
+// website rows — only the session lookup is faked.
+let mockOrgId = "";
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+vi.mock("@/lib/auth", () => ({
+  auth: {
+    api: {
+      getSession: async () => ({ session: { id: "test-session" }, user: { id: "test-user" } }),
+      listOrganizations: async () => [{ id: mockOrgId }],
+    },
+  },
+}));
+
+const { cancelCrawl } = await import("@/app/dashboard/actions");
 
 const APP_ROOT = path.resolve(process.cwd());
 const TSX_PREFLIGHT = path.join(APP_ROOT, "node_modules", "tsx", "dist", "preflight.cjs");
@@ -62,6 +81,7 @@ describe("crawl job cancellation (real pg-boss + real Postgres)", () => {
   beforeAll(async () => {
     const uniq = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     orgId = `test-org-cancel-${uniq}`;
+    mockOrgId = orgId;
     await db.insert(organizations).values({ id: orgId, name: "Cancel Test Org", slug: `test-org-cancel-${uniq}`, createdAt: new Date() });
     const [website] = await db
       .insert(websites)

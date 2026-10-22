@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { eq, desc } from "drizzle-orm";
-import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { websites, crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
+import { crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
 import { computeCrawlDiff } from "@/lib/findings-diff";
+import { requireWebsiteInActiveOrg, TenantError } from "@/lib/tenant";
 import {
   triggerCrawl,
   verifyWebsite,
@@ -21,12 +20,14 @@ export default async function WebsiteResultsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const requestHeaders = await headers();
-  const session = await auth.api.getSession({ headers: requestHeaders });
-  if (!session) redirect("/login");
-
-  const [website] = await db.select().from(websites).where(eq(websites.id, id));
-  if (!website) {
+  let website;
+  try {
+    website = await requireWebsiteInActiveOrg(id);
+  } catch (err) {
+    if (err instanceof TenantError && err.status === 401) redirect("/login");
+    // 403 (no org) and 404 (not found / belongs to another org) render the
+    // same generic message — never confirm or deny that a given id exists
+    // in someone else's organization.
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <p>Website not found.</p>

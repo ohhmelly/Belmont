@@ -1,26 +1,20 @@
 "use server";
 
-import { headers } from "next/headers";
 import { eq, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { websites, crawlJobs, notifications } from "@/db/app-schema";
+import { validateUrlForCrawl, CrawlSafetyError } from "@/lib/crawl-safety";
 import { generateVerificationToken, verifyByMetaTag, verifyByDnsTxt } from "@/lib/ownership-verification";
 import { enqueueCrawl, applyWebsiteSchedule, cancelCrawlJob, type AuditScheduleCadence } from "@/lib/queue";
 import { generateAndStoreRecommendations } from "@/lib/ai/generate-and-store";
 import { generateReportsForCrawlJob, ALL_FORMATS } from "@/lib/reports/generate";
-
-async function requireActiveOrgId(): Promise<string> {
-  const requestHeaders = await headers();
-  const session = await auth.api.getSession({ headers: requestHeaders });
-  if (!session) throw new Error("Not authenticated");
-  const organizations = await auth.api.listOrganizations({ headers: requestHeaders });
-  const activeOrg = organizations[0];
-  if (!activeOrg) throw new Error("No organization");
-  return activeOrg.id;
-}
+import {
+  requireActiveOrgId,
+  requireWebsiteInActiveOrg,
+  requireNotificationInActiveOrg,
+} from "@/lib/tenant";
 
 /**
  * Add a website and immediately enqueue a one-off manual crawl.
@@ -35,6 +29,22 @@ export async function addWebsite(formData: FormData): Promise<void> {
   const url = String(formData.get("url") ?? "").trim();
   if (!url) throw new Error("URL is required");
   new URL(url); // throws on malformed input before it ever reaches the DB/crawler
+
+  // Fail fast with a clear message instead of creating a website that is
+  // structurally guaranteed to fail its first crawl: a private/loopback/
+  // reserved-range target isn't a transient problem that might resolve
+  // itself, so there is no reason to let it through only to surface as a
+  // confusing "critical finding" after the fact (the gap this replaces).
+  try {
+    await validateUrlForCrawl(url);
+  } catch (err) {
+    if (err instanceof CrawlSafetyError) {
+      throw new Error(
+        `This URL can't be audited: ${err.message}. Add a publicly reachable website you control instead.`
+      );
+    }
+    throw err;
+  }
 
   const token = generateVerificationToken();
   const [website] = await db
@@ -58,8 +68,7 @@ export async function addWebsite(formData: FormData): Promise<void> {
 
 export async function triggerCrawl(formData: FormData): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
-  const [website] = await db.select().from(websites).where(eq(websites.id, websiteId));
-  if (!website) throw new Error("Website not found");
+  const website = await requireWebsiteInActiveOrg(websiteId);
 
   const [job] = await db
     .insert(crawlJobs)
@@ -85,8 +94,13 @@ export async function triggerCrawl(formData: FormData): Promise<void> {
 export async function cancelCrawl(formData: FormData): Promise<void> {
   const crawlJobId = String(formData.get("crawlJobId") ?? "");
   const websiteId = String(formData.get("websiteId") ?? "");
+  await requireWebsiteInActiveOrg(websiteId);
   const [job] = await db.select().from(crawlJobs).where(eq(crawlJobs.id, crawlJobId));
-  if (!job) throw new Error("Crawl job not found");
+  // Checking job.websiteId matches the org-verified websiteId (not just
+  // that the job exists) stops someone who owns one website from
+  // cancelling a crawl job id that actually belongs to a different
+  // website/org, by submitting their own websiteId alongside it.
+  if (!job || job.websiteId !== websiteId) throw new Error("Crawl job not found");
 
   if (job.status === "pending" || job.status === "running") {
     if (job.pgBossJobId) {
@@ -112,8 +126,7 @@ export async function setWebsiteSchedule(formData: FormData): Promise<void> {
   if (!["none", "daily", "weekly", "monthly"].includes(cadence)) {
     throw new Error("Invalid cadence");
   }
-  const [website] = await db.select().from(websites).where(eq(websites.id, websiteId));
-  if (!website) throw new Error("Website not found");
+  await requireWebsiteInActiveOrg(websiteId);
 
   await db.update(websites).set({ auditSchedule: cadence }).where(eq(websites.id, websiteId));
   await applyWebsiteSchedule(websiteId, cadence);
@@ -124,6 +137,7 @@ export async function setWebsiteSchedule(formData: FormData): Promise<void> {
 /** Mark an in-app notification (Phase 5) as read from the dashboard. */
 export async function markNotificationRead(formData: FormData): Promise<void> {
   const notificationId = String(formData.get("notificationId") ?? "");
+  await requireNotificationInActiveOrg(notificationId);
   await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, notificationId));
   revalidatePath("/dashboard");
 }
@@ -131,8 +145,7 @@ export async function markNotificationRead(formData: FormData): Promise<void> {
 export async function verifyWebsite(formData: FormData): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
   const method = String(formData.get("method") ?? "meta_tag");
-  const [website] = await db.select().from(websites).where(eq(websites.id, websiteId));
-  if (!website) throw new Error("Website not found");
+  const website = await requireWebsiteInActiveOrg(websiteId);
 
   const result =
     method === "dns_txt"
@@ -157,8 +170,7 @@ export async function verifyWebsite(formData: FormData): Promise<void> {
  */
 export async function generateReport(formData: FormData): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
-  const [website] = await db.select().from(websites).where(eq(websites.id, websiteId));
-  if (!website) throw new Error("Website not found");
+  await requireWebsiteInActiveOrg(websiteId);
 
   const [latestCompletedJob] = await db
     .select()

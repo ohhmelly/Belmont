@@ -11,7 +11,7 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "auth:generate": "better-auth generate --config src/lib/auth.ts --output src/db/auth-schema.ts -y"
+    "auth:generate": "npx --yes @better-auth/cli@latest generate --config src/lib/auth.ts --output src/db/auth-schema.ts -y"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.10.0",
@@ -20,7 +20,7 @@
     "drizzle-orm": "^0.45.4",
     "express": "^5.3.0",
     "next": "16.4.2",
-    "nodemailer": "^7.0.9",
+    "nodemailer": "^10.2.0",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "pg-boss": "^12.38.0",
@@ -29,7 +29,6 @@
     "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@better-auth/cli": "^1.4.21",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.19",

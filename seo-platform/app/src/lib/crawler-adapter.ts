@@ -82,8 +82,18 @@ export interface CrawlAdapterResult {
 
 function resolveBinaryPath(): string {
   if (process.env.CRAWLER_BIN_PATH) return process.env.CRAWLER_BIN_PATH;
-  // app/ is the Next.js project root at runtime; the vendored binary
-  // lives at <repo>/vendor/siteone-crawler/siteone-crawler.
+  // app/ is the Next.js project root at runtime. The vendored binary is
+  // platform-specific: vendor/siteone-crawler/siteone-crawler is a Linux
+  // ELF build (used in Docker/the Linux deployment target), and
+  // vendor/siteone-crawler-windows/siteone-crawler.exe is the official
+  // Windows release (used for local Windows development per the
+  // project's Windows-dev/Linux-prod requirement). Picking the wrong one
+  // fails every crawl with a confusing ENOENT on the *output* file, not
+  // an obvious "wrong binary" error, since the subprocess never starts —
+  // see docs/INTEGRATION_ARCHITECTURE.md for how this was discovered.
+  if (process.platform === "win32") {
+    return path.resolve(process.cwd(), "..", "vendor", "siteone-crawler-windows", "siteone-crawler.exe");
+  }
   return path.resolve(process.cwd(), "..", "vendor", "siteone-crawler", "siteone-crawler");
 }
 

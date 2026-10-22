@@ -81,6 +81,56 @@ piece of work — not a quick pass.
 - Visual regression testing, accessibility audit pass (WCAG) — makes
   more sense once there's an actual design to regress against.
 
+## Competitive reference (researched 2026-10-22, live in-browser)
+
+Looked at CrawlRaven's public sample report (a white-label tool built
+for exactly our use case — freelancers delivering branded client
+reports) and image-searched Sitebulb/Ahrefs/SEMrush-style dashboards to
+see what "professional" actually looks like in this exact category,
+rather than guessing. Concrete patterns worth adopting, in priority
+order for our PDF/HTML reports specifically:
+
+1. **Category score breakdown, not one number.** CrawlRaven leads with
+   5 big color-coded scores side by side (Technical/On-Page/Content/
+   Backlinks/AI Visibility — green ≥80, amber 60-79, red <60) instead
+   of a single health score. Ours currently shows one number. This is
+   the single highest-impact change: it's scannable in 2 seconds and
+   immediately tells a client which area needs work.
+2. **Issues ranked by impact, not just severity.** CrawlRaven's "Top
+   Issues by Traffic Impact" pairs a severity badge (Critical/High)
+   with a separate "Impact: High/Medium" label and a specific,
+   concrete description ("Faceted navigation creates 38,400 crawlable
+   filter URLs" — not "too many URLs"). Ours lists findings by severity
+   alone with the crawler's own description text, which is accurate but
+   more generic. Worth tightening finding descriptions to be this
+   specific where the data supports it.
+3. **Numbered, named sections with a short description each**
+   (01 Executive Summary ... 07 Prioritized Action Plan) — gives the
+   report a sense of structure/completeness a flat findings list
+   doesn't. Easy to adopt in our PDF's table of contents / section
+   headers.
+4. **A circular score gauge** (seen repeatedly across Sitebulb/
+   competitor dashboards — e.g. "92" inside a green ring) is the
+   dominant visual convention for the headline score. Worth it in the
+   HTML report at least (PDF vector-drawing a ring in pdfkit is more
+   work; HTML can do it with inline SVG cheaply).
+5. **"AI Visibility" as its own audited category** (GPTBot/ClaudeBot/
+   PerplexityBot access in robots.txt, llms.txt presence) is now a
+   standard section in competitor reports and is something **we don't
+   check for at all today** — this is a real feature gap, not just a
+   design gap, and a cheap one to add (robots.txt is already fetched;
+   just needs a small rule checking for AI-bot user-agent blocks).
+6. **Trend/history charts** (crawl-over-crawl line charts) appear
+   everywhere in the more expensive tools. We already compute this data
+   (`findings-diff.ts`'s new/resolved/persisting from Phase 5) but
+   don't visualize it as a chart anywhere yet — low-hanging fruit since
+   the data layer already exists.
+
+Not adopted: competitor sidebar-heavy, many-tabs dashboard UIs (Sitebulb
+in particular) — appropriate for a tool an agency lives in all day, not
+for a lean one-report-per-client tool, which is what this actually is
+now per the project owner's direction.
+
 ## Recommendation
 
 Start with #1–3 (tokens, type, components) as their own slice, since

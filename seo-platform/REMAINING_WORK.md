@@ -17,6 +17,37 @@ priority of report output quality (the actual client deliverable) and
 having the stack reliably runnable on demand. Next planned work: a
 design/polish pass on the PDF/HTML reports specifically (see
 `docs/DESIGN_UPDATES.md` item 8), not deployment or further SaaS features.
+Status 2026-10-23: that report-polish pass is done (category scores,
+AI-crawler-visibility check, SVG gauge, numbered sections, history
+chart) — see `IMPLEMENTATION_PLAN.md`'s "Report-polish pass" entry.
+
+## New, real bug found 2026-10-23 (not yet fixed)
+
+**Server-action error messages are invisible to users in the production
+build.** Several places throw a clear, intentional, user-facing error —
+`addWebsite`'s SSRF validation message, `src/lib/billing/quota.ts`'s
+`QuotaError` messages, `setWebsiteSchedule`'s plan-gate message — and
+`src/app/dashboard/error.tsx` (Phase 6) was built specifically to
+display `error.message` nicely instead of Next's raw overlay. In `npm
+run dev` this works. In the actual production build (`npm run build` +
+`npm run start` — i.e. what's actually running day to day), Next.js
+redacts thrown Server Action/Server Component error messages on the
+client by design, replacing them with a generic "Minified React error
+#441" and a digest. Confirmed directly: triggered a real `QuotaError`
+("Your Free plan allows 3 manual crawls per calendar month...") and
+captured the real message in the server's own log, while the browser
+showed only the digest.
+
+**Fix**: convert the affected forms from plain `<form action={fn}>` +
+throw to the `useActionState` pattern — actions return
+`{ error: string } | { success: true, ... }` instead of throwing for
+*expected* error cases (validation, quota, SSRF), and a small client
+wrapper around each form displays `state.error` inline. This touches:
+`addWebsite`, `triggerCrawl`, `setWebsiteSchedule`, `verifyWebsite`,
+`generateReport`, `cancelCrawl`, `markNotificationRead`, and billing's
+`changePlan`/`openBillingPortal`. Not done yet — found while visually
+verifying the report-polish pass, out of that pass's scope, flagged
+here rather than silently fixed or silently ignored.
 
 ## Fixed in this session (2026-10-22, on a real Windows dev machine)
 

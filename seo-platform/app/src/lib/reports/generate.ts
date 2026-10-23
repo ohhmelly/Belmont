@@ -18,7 +18,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { websites, crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
 import { organizations } from "@/db/auth-schema";
-import { buildReportPayload, type ReportPayload } from "./report-data";
+import { computeCrawlDiff, SEVERITY_RANK } from "../findings-diff";
+import { buildReportPayload, type ReportPayload, type ReportHistory } from "./report-data";
 import { generateCsv } from "./csv";
 import { generateHtml } from "./html";
 import { generatePdf } from "./pdf";
@@ -41,6 +42,18 @@ export function contentTypeForFormat(format: string): string {
   return CONTENT_TYPES[format as ReportFormat] ?? "application/octet-stream";
 }
 
+/** How many individual new/resolved findings to carry into the "Historical Comparison" narrative sample — the counts themselves (newCount/resolvedCount/persistingCount) are always exact and unsampled; only the illustrative list is capped. */
+const HISTORY_SAMPLE_LIMIT = 10;
+
+function sampleBySeverity<T extends { category: string; severity: string; url: string; title: string }>(
+  rows: T[]
+): { category: string; severity: string; url: string; title: string }[] {
+  return [...rows]
+    .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9))
+    .slice(0, HISTORY_SAMPLE_LIMIT)
+    .map((f) => ({ category: f.category, severity: f.severity, url: f.url, title: f.title }));
+}
+
 async function loadPayload(crawlJobId: string): Promise<ReportPayload> {
   const [job] = await db.select().from(crawlJobs).where(eq(crawlJobs.id, crawlJobId));
   if (!job) throw new Error(`crawl job ${crawlJobId} not found`);
@@ -53,12 +66,33 @@ async function loadPayload(crawlJobId: string): Promise<ReportPayload> {
   const findingRows = await db.select().from(findings).where(eq(findings.crawlJobId, crawlJobId));
   const recommendationRows = await db.select().from(aiRecommendations).where(eq(aiRecommendations.crawlJobId, crawlJobId));
 
+  // Historical comparison: computeCrawlDiff looks at the website's two
+  // most recent COMPLETED crawls (by finishedAt), which is not
+  // necessarily "this crawl vs. the one before it" if reports are
+  // regenerated for an older crawl job — that's fine; it's always the
+  // most meaningful real comparison available for this website right
+  // now. Returns null (then omitted below) when there's only one
+  // completed crawl so far.
+  const diff = await computeCrawlDiff(website.id);
+  const history: ReportHistory | null = diff
+    ? {
+        previousCrawlJobId: diff.previousCrawlJobId,
+        currentCrawlJobId: diff.currentCrawlJobId,
+        newCount: diff.newFindings.length,
+        resolvedCount: diff.resolvedFindings.length,
+        persistingCount: diff.persistingFindings.length,
+        newSample: sampleBySeverity(diff.newFindings),
+        resolvedSample: sampleBySeverity(diff.resolvedFindings),
+      }
+    : null;
+
   return buildReportPayload({
     website: { id: website.id, url: website.url },
     organizationName: org?.name ?? "Unknown organization",
     crawlJob: { id: job.id, startedAt: job.startedAt, finishedAt: job.finishedAt },
     findings: findingRows,
     recommendations: recommendationRows,
+    history,
   });
 }
 

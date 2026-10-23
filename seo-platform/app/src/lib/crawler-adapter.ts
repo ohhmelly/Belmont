@@ -41,6 +41,7 @@ import {
   detectHreflangIssues,
   detectStructuredDataIssues,
   detectMalformedHtml,
+  detectAiCrawlerAccessIssues,
 } from "./supplementary-rules";
 
 const execFileAsync = promisify(execFile);
@@ -77,6 +78,8 @@ export interface CrawlAdapterResult {
     jsRenderingUnavailableReason?: string;
     exitCode: number | null;
     binaryVersion?: string;
+    /** llms.txt (https://llmstxt.org) existence probe — see supplementary-rules.ts's detectAiCrawlerAccessIssues. */
+    llmsTxtFound: boolean;
   };
 }
 
@@ -342,18 +345,33 @@ export function mapSiteoneReportToFindings(
   return { findings, discoveredUrls, skippedByRobots, blockedSsrfRedirects };
 }
 
-async function discoverSitemapUrl(origin: string, safety: CrawlSafetyOptions): Promise<string> {
+/** Fetch robots.txt once (reused for sitemap discovery AND the AI-crawler check below, instead of fetching it twice). Returns null if unreachable/non-2xx — the same "fall through" behavior as before. */
+async function fetchRobotsTxt(origin: string, safety: CrawlSafetyOptions): Promise<string | null> {
   try {
     const result = await safeFetch(`${origin}/robots.txt`, safety);
-    if (result.status >= 200 && result.status < 300) {
-      const text = result.body.toString("utf8");
-      const match = text.match(/^\s*Sitemap:\s*(\S+)/im);
-      if (match) return match[1];
-    }
+    if (result.status >= 200 && result.status < 300) return result.body.toString("utf8");
   } catch {
-    // fall through to default location
+    // treated as "no robots.txt" below
+  }
+  return null;
+}
+
+function discoverSitemapUrl(robotsTxt: string | null, origin: string): string {
+  if (robotsTxt) {
+    const match = robotsTxt.match(/^\s*Sitemap:\s*(\S+)/im);
+    if (match) return match[1];
   }
   return `${origin}/sitemap.xml`;
+}
+
+/** llms.txt (https://llmstxt.org) presence check — a plain existence probe, nothing parsed. */
+async function checkLlmsTxtExists(origin: string, safety: CrawlSafetyOptions): Promise<boolean> {
+  try {
+    const result = await safeFetch(`${origin}/llms.txt`, safety);
+    return result.status >= 200 && result.status < 300;
+  } catch {
+    return false;
+  }
 }
 
 export async function runCrawl(startUrl: string, options: CrawlOptions = {}): Promise<CrawlAdapterResult> {
@@ -386,6 +404,7 @@ export async function runCrawl(startUrl: string, options: CrawlOptions = {}): Pr
           jsRenderingRequested: Boolean(options.jsRendering),
           jsRenderingUsed: false,
           exitCode: null,
+          llmsTxtFound: false,
         },
       };
     }
@@ -489,11 +508,17 @@ export async function runCrawl(startUrl: string, options: CrawlOptions = {}): Pr
     ...detectMalformedHtml(snapshots),
   ];
 
-  const sitemapUrl = await discoverSitemapUrl(origin, safety);
+  const robotsTxt = await fetchRobotsTxt(origin, safety);
+  const sitemapUrl = discoverSitemapUrl(robotsTxt, origin);
   const sitemapUrls = await fetchSitemapUrls(sitemapUrl, safety);
   const orphanFindings = detectOrphanPages(sitemapUrls, mapped.discoveredUrls);
 
-  const allFindings = [...mapped.findings, ...supplementaryFindings, ...orphanFindings];
+  // AI-crawler-visibility check (robots.txt already fetched above for
+  // sitemap discovery; llms.txt is a cheap extra existence probe).
+  const llmsTxtFound = await checkLlmsTxtExists(origin, safety);
+  const aiVisibilityFindings = detectAiCrawlerAccessIssues(robotsTxt, llmsTxtFound);
+
+  const allFindings = [...mapped.findings, ...supplementaryFindings, ...orphanFindings, ...aiVisibilityFindings];
 
   if (mapped.blockedSsrfRedirects.length > 0) {
     for (const blocked of mapped.blockedSsrfRedirects) {
@@ -522,6 +547,7 @@ export async function runCrawl(startUrl: string, options: CrawlOptions = {}): Pr
       jsRenderingUnavailableReason,
       exitCode,
       binaryVersion: report.crawler?.version,
+      llmsTxtFound,
     },
   };
 }

@@ -199,9 +199,22 @@ app.get("/error-page", (req, res) => {
   res.status(500).send("Internal Server Error (deliberate fixture)");
 });
 
-// --- robots.txt disallows /private/, and a real page lives under it ---
+// --- robots.txt disallows /private/, and a real page lives under it.
+//     Also deliberately blocks GPTBot (OpenAI's AI crawler) under its own
+//     "User-agent: GPTBot" group with "Disallow: /", to prove the new
+//     AI-crawler-visibility check (supplementary-rules.ts's
+//     detectAiCrawlerAccessIssues) produces a real finding from a real
+//     crawl. ClaudeBot/PerplexityBot/etc. are deliberately NOT blocked
+//     here, so the same test can assert they are correctly reported as
+//     NOT blocked. There is no /llms.txt route on this fixture server —
+//     that absence is itself the fixture for the "llms.txt missing"
+//     informational finding.
 app.get("/robots.txt", (req, res) => {
-  res.type("text/plain").send(`User-agent: *\nDisallow: /private/\nSitemap: http://${req.get("host")}/sitemap.xml\n`);
+  res
+    .type("text/plain")
+    .send(
+      `User-agent: *\nDisallow: /private/\n\nUser-agent: GPTBot\nDisallow: /\n\nSitemap: http://${req.get("host")}/sitemap.xml\n`
+    );
 });
 app.get("/private/secret", (req, res) => {
   res.send(

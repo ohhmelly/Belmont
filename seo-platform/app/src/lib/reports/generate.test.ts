@@ -179,6 +179,83 @@ describe("Phase 4 end-to-end: crawl -> findings -> AI recommendations -> 4 repor
       expect(["pdf", "html", "csv", "json"]).toContain(r.format);
       expect(typeof r.healthScore).toBe("number");
     }
+
+    // --- report-polish pass: real AI-visibility finding from the real fixture robots.txt rule ---
+    const aiCrawlerFindings = findingRows.filter((f) => f.category === "ai_crawler_blocked");
+    expect(aiCrawlerFindings.length).toBeGreaterThanOrEqual(1);
+    expect(aiCrawlerFindings.some((f) => (f.evidence as Record<string, unknown>).userAgent === "GPTBot")).toBe(true);
+    const llmsTxtFindings = findingRows.filter((f) => f.category === "llms_txt_missing");
+    expect(llmsTxtFindings.length).toBe(1);
+    expect(llmsTxtFindings[0].severity).toBe("low");
+
+    // --- category score breakdown: hand-check the math against the REAL findings rows from this crawl ---
+    expect(parsed.categoryScores).toHaveLength(4);
+    const categories = parsed.categoryScores.map((c: { category: string }) => c.category).sort();
+    expect(categories).toEqual(["ai_visibility", "content", "on_page", "technical"]);
+
+    const SEVERITY_DEDUCTIONS: Record<string, number> = { critical: 8, high: 4, medium: 2, low: 0.5 };
+    const CATEGORY_MAP: Record<string, string> = {
+      broken_link: "technical",
+      timeout: "technical",
+      server_error: "technical",
+      redirect_loop: "technical",
+      redirect_chain: "technical",
+      unsafe_crawl_target: "technical",
+      ssrf_blocked_redirect: "technical",
+      malformed_html: "technical",
+      structured_data_invalid: "technical",
+      missing_title: "on_page",
+      missing_meta_description: "on_page",
+      duplicate_title: "on_page",
+      duplicate_meta_description: "on_page",
+      canonical_conflict: "on_page",
+      hreflang_not_reciprocal: "on_page",
+      orphan_page: "content",
+      orphan_page_summary: "content",
+      ai_crawler_blocked: "ai_visibility",
+      llms_txt_missing: "ai_visibility",
+    };
+    const expectedRaw: Record<string, number> = { technical: 100, on_page: 100, content: 100, ai_visibility: 100 };
+    for (const f of findingRows) {
+      const bucket = CATEGORY_MAP[f.category] ?? "technical";
+      expectedRaw[bucket] -= SEVERITY_DEDUCTIONS[f.severity] ?? 1;
+    }
+    for (const bucket of Object.keys(expectedRaw)) {
+      expectedRaw[bucket] = Math.max(0, Math.min(100, expectedRaw[bucket]));
+    }
+    for (const cs of parsed.categoryScores as Array<{ category: string; rawScore: number; score: number }>) {
+      expect(cs.rawScore).toBeCloseTo(expectedRaw[cs.category], 2);
+      expect(cs.score).toBe(Math.round(expectedRaw[cs.category]));
+    }
+    console.log(
+      `[generate.test] category scores (hand-checked against ${findingRows.length} real findings): ${JSON.stringify(
+        (parsed.categoryScores as Array<{ category: string; score: number; totalFindings: number }>).map(
+          (c) => `${c.category}=${c.score}(n=${c.totalFindings})`
+        )
+      )}`
+    );
+
+    // --- history: only one completed crawl exists for this website, so it must be omitted cleanly, not errored ---
+    expect(parsed.history).toBeNull();
+    expect(htmlText).not.toContain("07. Historical Comparison");
+
+    // --- HTML: well-formed inline SVG for the score gauge + category tiles present ---
+    expect(htmlText).toContain("<svg");
+    expect((htmlText.match(/<svg/g) ?? []).length).toBe((htmlText.match(/<\/svg>/g) ?? []).length);
+    expect(htmlText).toContain(`role="img" aria-label="Overall health score: ${parsed.healthScore.score} out of 100"`);
+    expect(htmlText).toContain("cat-tile");
+    expect(htmlText).toContain("01. Executive Summary");
+    expect(htmlText).toContain("02. Technical Findings");
+    expect(htmlText).toContain("03. On-Page Findings");
+    expect(htmlText).toContain("04. Content Findings");
+    expect(htmlText).toContain("05. AI Visibility");
+    expect(htmlText).toContain("06. Prioritized Action Plan");
+    // GPTBot finding must actually render somewhere in the AI Visibility section's findings table.
+    expect(htmlText).toContain("GPTBot");
+
+    // --- PDF: category breakdown + numbered sections present in the extracted text stream is hard without a PDF parser dependency; settle for structural checks already done above (valid %PDF-/%%EOF, >=1 page) plus a page-count bump from the new per-category pages. ---
+    const pdfPageCount = (pdfBuffer.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+    expect(pdfPageCount).toBeGreaterThanOrEqual(5); // base + 4 category pages + action-plan page + affected-urls page, addPage() calls guarantee multiple pages
   }, 60_000);
 });
 

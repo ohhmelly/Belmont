@@ -84,8 +84,19 @@ let orgId: string;
 let websiteId: string;
 
 beforeAll(async () => {
-  await new Promise<void>((resolve) => server.listen(4212, "127.0.0.1", resolve));
-  origin = "http://127.0.0.1:4212";
+  // Port 4216: deliberately NOT 4212 (used by reports/generate.test.ts's
+  // own fixture server). This file previously hardcoded 4212 too, which
+  // is a real pre-existing port collision across test files that run
+  // concurrently — under full-suite load, requests from one file's crawl
+  // can land on the OTHER file's server on the same port, since both are
+  // bound to 127.0.0.1 and Node's http server doesn't error loudly on
+  // that; the symptom only became visible once a report-polish test
+  // started asserting on robots.txt-derived content (this file's robots.txt
+  // -- "User-agent: *\nAllow: /\n" -- has no AI-bot block, unlike
+  // generate.test.ts's actual fixture server, so a collision silently
+  // produced zero ai_crawler_blocked findings instead of an error).
+  await new Promise<void>((resolve) => server.listen(4216, "127.0.0.1", resolve));
+  origin = "http://127.0.0.1:4216";
 
   const uniq = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   orgId = `test-org-diff-${uniq}`;

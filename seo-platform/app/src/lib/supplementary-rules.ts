@@ -19,6 +19,143 @@
 import { safeFetch, type CrawlSafetyOptions } from "./crawl-safety";
 import type { NormalizedFinding } from "./finding-types";
 
+/**
+ * Well-known AI-crawler user-agent tokens, as publicly documented by
+ * each vendor (checked against each vendor's own robots.txt
+ * documentation at the time this was written — not guessed):
+ *  - GPTBot, ChatGPT-User: OpenAI (https://platform.openai.com/docs/gptbot)
+ *  - ClaudeBot, anthropic-ai: Anthropic
+ *  - PerplexityBot: Perplexity AI
+ *  - Google-Extended: Google's opt-out token for Gemini/Vertex AI
+ *    training (sent as part of Googlebot's normal fetches, but
+ *    controlled via this separate robots.txt token)
+ *  - CCBot: Common Crawl (widely used as LLM pretraining data by many
+ *    labs, not just one)
+ *  - Bytespider: ByteDance
+ *  - Applebot-Extended: Apple's opt-out token for Apple Intelligence
+ *    training
+ * This list reflects the vendors' documented tokens as of this writing
+ * and should be revisited periodically — new AI crawlers appear
+ * regularly. Never invent a token that isn't actually documented by its
+ * vendor.
+ */
+export const KNOWN_AI_CRAWLER_USER_AGENTS: Array<{ userAgent: string; vendor: string }> = [
+  { userAgent: "GPTBot", vendor: "OpenAI" },
+  { userAgent: "ChatGPT-User", vendor: "OpenAI" },
+  { userAgent: "ClaudeBot", vendor: "Anthropic" },
+  { userAgent: "anthropic-ai", vendor: "Anthropic" },
+  { userAgent: "PerplexityBot", vendor: "Perplexity AI" },
+  { userAgent: "Google-Extended", vendor: "Google (Gemini / Vertex AI training opt-out token)" },
+  { userAgent: "CCBot", vendor: "Common Crawl (reused as training data by many AI labs)" },
+  { userAgent: "Bytespider", vendor: "ByteDance" },
+  { userAgent: "Applebot-Extended", vendor: "Apple (Apple Intelligence training opt-out token)" },
+];
+
+interface RobotsGroup {
+  userAgents: string[];
+  disallows: string[];
+  allows: string[];
+}
+
+/**
+ * Minimal robots.txt parser: groups consecutive `User-agent:` lines
+ * into one group (standard robots.txt grouping — a blank-line or a new
+ * `User-agent:` line appearing AFTER at least one rule line starts a
+ * new group), collecting that group's `Disallow`/`Allow` rules. Good
+ * enough for the one thing we need it for (detecting a full-site block
+ * of a specific named bot) — this is not a general-purpose robots.txt
+ * rule-precedence engine.
+ */
+function parseRobotsGroups(robotsTxt: string): RobotsGroup[] {
+  const groups: RobotsGroup[] = [];
+  let current: RobotsGroup | null = null;
+  let sawRuleSinceLastUserAgent = false;
+
+  for (const rawLine of robotsTxt.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, "").trim();
+    if (!line) continue;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim().toLowerCase();
+    const value = line.slice(colonIdx + 1).trim();
+
+    if (key === "user-agent") {
+      if (current && sawRuleSinceLastUserAgent) current = null;
+      if (!current) {
+        current = { userAgents: [], disallows: [], allows: [] };
+        groups.push(current);
+        sawRuleSinceLastUserAgent = false;
+      }
+      current.userAgents.push(value);
+    } else if (key === "disallow" && current) {
+      current.disallows.push(value);
+      sawRuleSinceLastUserAgent = true;
+    } else if (key === "allow" && current) {
+      current.allows.push(value);
+      sawRuleSinceLastUserAgent = true;
+    }
+  }
+  return groups;
+}
+
+/** True if a robots.txt group targeting exactly this bot (case-insensitive) fully disallows the whole site ("Disallow: /" or "/*", not overridden by an "Allow: /"). */
+function isFullyBlockedForBot(groups: RobotsGroup[], userAgent: string): boolean {
+  const target = userAgent.toLowerCase();
+  for (const group of groups) {
+    if (!group.userAgents.some((ua) => ua.toLowerCase() === target)) continue;
+    const blocksRoot = group.disallows.some((d) => d === "/" || d === "/*");
+    if (!blocksRoot) continue;
+    const allowsRoot = group.allows.some((a) => a === "/" || a === "");
+    if (!allowsRoot) return true;
+  }
+  return false;
+}
+
+/**
+ * AI-crawler-visibility check (real feature gap, not just a design
+ * change — see docs/DESIGN_UPDATES.md's "Competitive reference" #5).
+ * Produces ONE finding per blocked well-known AI bot (never a combined
+ * finding) so a report can show exactly which bots are blocked, plus
+ * one low-severity informational finding when no `llms.txt` is found
+ * (its absence is common and not itself a defect — see
+ * https://llmstxt.org for the convention this checks for).
+ */
+export function detectAiCrawlerAccessIssues(
+  robotsTxt: string | null,
+  llmsTxtFound: boolean
+): NormalizedFinding[] {
+  const findings: NormalizedFinding[] = [];
+  const groups = robotsTxt ? parseRobotsGroups(robotsTxt) : [];
+
+  for (const bot of KNOWN_AI_CRAWLER_USER_AGENTS) {
+    if (isFullyBlockedForBot(groups, bot.userAgent)) {
+      findings.push({
+        sourceEngine: "supplementary-rules",
+        url: "/robots.txt",
+        severity: "medium",
+        category: "ai_crawler_blocked",
+        title: `robots.txt blocks ${bot.userAgent} (${bot.vendor})`,
+        description: `robots.txt has a "User-agent: ${bot.userAgent}" group with "Disallow: /", fully blocking ${bot.vendor}'s AI crawler from the entire site. If being referenced or cited by AI assistants/answer engines matters for this business, this is worth a deliberate decision rather than an unreviewed default.`,
+        evidence: { userAgent: bot.userAgent, vendor: bot.vendor },
+      });
+    }
+  }
+
+  if (!llmsTxtFound) {
+    findings.push({
+      sourceEngine: "supplementary-rules",
+      url: "/llms.txt",
+      severity: "low",
+      category: "llms_txt_missing",
+      title: "No llms.txt file found",
+      description: "llms.txt (see https://llmstxt.org) is an emerging, voluntary convention for giving AI assistants a curated Markdown summary of a site's key content. Its absence is informational, not an error — most sites, including many well-optimized ones, don't have one yet.",
+      evidence: { checkedPath: "/llms.txt" },
+    });
+  }
+
+  return findings;
+}
+
 const HREFLANG_RE =
   /<link[^>]+rel=["']alternate["'][^>]*hreflang=["']([^"']+)["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
 const JSONLD_RE = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;

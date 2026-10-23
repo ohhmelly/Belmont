@@ -10,6 +10,36 @@
  * number even by accident.
  */
 import { computeHealthScore, type HealthScoreResult } from "./health-score";
+import { computeCategoryScores, type CategoryScore } from "./category-scores";
+
+export type { CategoryScore } from "./category-scores";
+
+/**
+ * Historical comparison (crawl-over-crawl), built from `findings-diff.ts`'s
+ * `computeCrawlDiff` by the caller (generate.ts), not computed here — this
+ * module stays a pure function over whatever its input already contains,
+ * with no direct database access, same as the rest of report-data.ts.
+ * `null` when there's only one completed crawl to show (nothing to diff
+ * against yet) — the HTML/PDF renderers omit the section cleanly in that
+ * case, never showing an error.
+ */
+export interface ReportHistoryFindingSample {
+  category: string;
+  severity: string;
+  url: string;
+  title: string;
+}
+
+export interface ReportHistory {
+  previousCrawlJobId: string;
+  currentCrawlJobId: string;
+  newCount: number;
+  resolvedCount: number;
+  persistingCount: number;
+  /** Capped sample (already sorted/sliced by the caller), for narrative display — not every new/resolved finding, which could be very long. */
+  newSample: ReportHistoryFindingSample[];
+  resolvedSample: ReportHistoryFindingSample[];
+}
 
 export interface ReportFinding {
   id: string;
@@ -45,6 +75,8 @@ export interface ReportPayload {
     generatedAt: string;
   };
   healthScore: HealthScoreResult;
+  /** Same deduction formula as `healthScore`, scoped per category — see category-scores.ts. Always exactly 4 entries (Technical/On-Page/Content/AI Visibility), each present even at a clean 100. */
+  categoryScores: CategoryScore[];
   summary: {
     totalFindings: number;
     bySeverity: Record<string, number>;
@@ -55,6 +87,8 @@ export interface ReportPayload {
   recommendations: ReportRecommendation[];
   /** True when at least one recommendation came from a real AI call (not the template fallback). */
   aiAssisted: boolean;
+  /** null when there's only one completed crawl for this website so far. */
+  history: ReportHistory | null;
 }
 
 export interface BuildReportPayloadInput {
@@ -82,6 +116,8 @@ export interface BuildReportPayloadInput {
     body: string;
     metadata: unknown;
   }[];
+  /** Already computed/sorted/capped by the caller (generate.ts) via findings-diff.ts's computeCrawlDiff — see ReportHistory's doc comment. Omit or pass null when there's no prior completed crawl. */
+  history?: ReportHistory | null;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -90,6 +126,7 @@ function asStringArray(value: unknown): string[] {
 
 export function buildReportPayload(input: BuildReportPayloadInput): ReportPayload {
   const healthScore = computeHealthScore(input.findings);
+  const categoryScores = computeCategoryScores(input.findings);
 
   const bySeverity: Record<string, number> = {};
   const byCategory: Record<string, number> = {};
@@ -124,6 +161,7 @@ export function buildReportPayload(input: BuildReportPayloadInput): ReportPayloa
       generatedAt: new Date().toISOString(),
     },
     healthScore,
+    categoryScores,
     summary: {
       totalFindings: input.findings.length,
       bySeverity,
@@ -144,6 +182,7 @@ export function buildReportPayload(input: BuildReportPayloadInput): ReportPayloa
     })),
     recommendations,
     aiAssisted: recommendations.some((r) => r.generatedBy !== "template-fallback" && r.generatedBy !== "unknown"),
+    history: input.history ?? null,
   };
 }
 

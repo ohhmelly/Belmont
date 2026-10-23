@@ -8,6 +8,41 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blo
 > (README, ARCHITECTURE, SECURITY_REVIEW, etc.) live inside `seo-platform/`
 > rather than the repo root.
 
+## Report-polish pass (2026-10-22/23, independently re-verified)
+
+Grounded in real competitor research (CrawlRaven's public sample report,
+Sitebulb/Ahrefs-style dashboards — see `docs/DESIGN_UPDATES.md`
+"Competitive reference"). Delivered:
+- **AI-crawler-visibility check** — a real feature gap, not just design:
+  flags GPTBot/ClaudeBot/PerplexityBot/etc. blocked in robots.txt (one
+  finding per blocked bot) and missing `llms.txt` (informational, low
+  severity). Verified against a real fixture crawl.
+- **Category score breakdown** (Technical/On-Page/Content/AI Visibility)
+  using the same deduction formula as the overall score, just scoped —
+  verified by hand-checking real crawl math.
+- **Visual polish**: inline-SVG circular score gauge and category tiles
+  in the HTML report, numbered sections (01–07), a historical-comparison
+  bar chart when 2+ crawls exist — no charting library added.
+- **Independently re-verified by me**, not just the implementing agent:
+  `tsc`/`build` clean, full test suite (159 passed, 2 skipped) re-run
+  myself, and the actual generated HTML/PDF report opened and visually
+  inspected in a real browser against real crawl data — gauge, tiles,
+  numbered sections, and the historical chart all render correctly with
+  honest data (clean categories correctly show 100/0 findings, not
+  omitted or faked).
+
+**Separate finding while testing this (not part of the report-polish
+work itself):** server actions that throw a clear, user-facing error
+(the SSRF validation message, Phase 6's quota messages) render as a
+cryptic "Minified React error #441" in the production build instead of
+the intended message — Next.js redacts thrown-error messages on the
+client in production by design. The real message IS logged server-side
+(confirmed: a real `QuotaError` with its full clear text was captured in
+server logs while the client only showed a digest). Fixing this properly
+means converting the affected forms to return structured results
+(`useActionState`) instead of throwing — a real, separate piece of work,
+tracked in `REMAINING_WORK.md`, not done as part of this pass.
+
 ---
 
 ## Real-machine testing pass (2026-10-22, Windows dev machine, Remote Control)

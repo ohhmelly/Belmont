@@ -54,11 +54,17 @@ piece of work — not a quick pass.
    coding (beyond text labels), a real findings table with sort/filter,
    a visual health-score element (not just a number), and a genuine
    crawl-progress indicator instead of a static "pending/running" pill.
-8. **Reports themselves** (PDF/HTML) — currently plain pdfkit output and
-   a bare HTML document. Needs real branding/layout treatment per the
-   original spec's "attractive and understandable to nontechnical
-   business owners" requirement — this is customer-facing output, so it
-   arguably deserves earlier attention than internal dashboard screens.
+8. **Reports themselves** (PDF/HTML) — ~~currently plain pdfkit output
+   and a bare HTML document~~ **UPDATE (report-polish pass, same day):
+   items #1, #3, #4, #5, and #6 of the "Competitive reference" list
+   below are now implemented** in `app/src/lib/reports/{html,pdf,
+   category-scores}.ts` — category score breakdown, numbered sections,
+   a circular HTML score gauge, the new AI Visibility check, and a
+   crawl-over-crawl history chart. See `docs/AI_AND_SCORING.md` §2.5/
+   §2.6/§3/§3.1 for the full writeup and real verification evidence.
+   Still open: real branding/white-label treatment (org logo, custom
+   colors) and #2 (impact-ranked issues, as opposed to severity-ranked)
+   from the list below — this pass did not attempt either.
 
 ## Interaction / motion (after the above, not before)
 

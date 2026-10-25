@@ -177,10 +177,18 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps, carried forward honestly:** 4 moderate dependency findings accepted (dev-only, unreachable in production usage, forcing the fix would mean a major downgrade); Docker changes unverified by an actual build in any sandbox so far; in-memory rate limiters are single-process by design (matches this project's single-instance target, won't coordinate across multiple app instances — a real multi-instance deployment would need a shared store); production needs a correctly configured reverse proxy for Better Auth's IP-based rate limiting to key on real client IPs, flagged for `DEPLOYMENT.md`.
 
-## Phase 8 — Deployment Prep
-- [ ] Docker Compose finalized for Linux target (Dell server) and Windows dev
-- [ ] `DEPLOYMENT.md` (setup, health checks, persistence, backup/restore, logging, restart policy, upgrade, HTTPS/reverse-proxy guidance)
-- [ ] `README.md`, `CHANGELOG.md`, `REMAINING_WORK.md`
+## Phase 8 — Deployment Prep ✅ COMPLETE (2026-10-25)
+- [x] Docker Compose finalized for Linux target (Dell server) and Windows dev — **and, for the first time, actually verified with a real Docker daemon** (every prior phase's "unverified" caveat is finally closed, not just repeated). This sandbox instance's `dockerd` started successfully; a real `docker compose build` (both `app` and `worker` images) and `docker compose up -d` brought up all three services, each reporting Docker's own `healthy` status. `curl /api/health` returned `{"status":"ok","db":"connected"}` through the containerized app; the worker's `/healthz` returned `{"status":"ok"}` both internally and when called from the `app` container over the Compose network. `npx drizzle-kit migrate` against the containerized Postgres applied cleanly from an empty schema to the full current 16-table schema. Both images confirmed non-root (`whoami` → `nextjs`/`worker`) and under their configured CPU/memory limits (`docker inspect`). The stack was torn down cleanly afterward.
+  - Two sandbox-only workarounds were needed to reach the real npm registry and Google Fonts through this sandbox's transparent container-HTTPS interception (`NODE_EXTRA_CA_CERTS` in **every** Dockerfile stage that runs npm — a multi-stage build's later stages don't inherit an earlier stage's `ENV`; and `docker build --network host` + the auto-forwarded `HTTPS_PROXY`/`HTTP_PROXY` build-args for Turbopack's font fetch, which doesn't honor `NODE_EXTRA_CA_CERTS` at all). **Neither workaround is in the committed Dockerfiles** — both were applied, used to build/run/verify, then reverted (`git diff` confirmed clean) before anything was committed. Full detail in `docs/DEPLOYMENT.md` §1.
+  - **Real gap found and fixed**: `docker-compose.yml`'s `app` service had no volume for `/app/storage/reports` — generated reports would be silently lost on every container rebuild/recreate. Added the `app_reports` named volume and proved persistence with an actual force-recreate-and-check. This fix (unlike the sandbox workarounds above) **is** committed.
+- [x] `DEPLOYMENT.md` — setup (Linux prod + cross-reference to Windows dev), health checks, persistence table, a real runnable `scripts/backup.sh` (pg_dump + reports tarball) with a matching restore procedure, logging (stdout/JSON-lines, `docker compose logs` usage), restart-policy semantics, upgrade/migration procedure, environment-variable notes (Stripe test-mode guard, single-process rate limiters, optional Ollama/SMTP), and HTTPS/reverse-proxy guidance with complete Caddy and nginx examples — both syntax-validated in this sandbox (`caddy validate`, `nginx -t`), not just written from memory.
+- [x] `README.md` (new, top-level `seo-platform/README.md`) — accurate project description, real tech stack, Windows+Linux setup instructions, an honest done-vs-partial feature list cross-checked against this file, links to every doc in `docs/`.
+- [x] `CHANGELOG.md` (new) — real phase-by-phase history derived from `git log`'s actual commit dates, not invented ones.
+- [x] `REMAINING_WORK.md` — re-read in full and updated: closed out everything Phase 7 fixed that it still listed as open (password reset, rate limiting, CSV injection, Docker non-root, resource limits, Docker-unverified), consolidated every phase's "known gaps" into one security-first-then-functional-then-polish prioritized list, and added this phase's own new finding (the `app_reports` volume gap). Confirmed the one item it flagged that is genuinely still unfixed (Server Action error messages redacted in production builds — no `useActionState` usage found anywhere in `src/`, checked directly) is still accurately described as open.
+
+**Independently re-verified in this session:** `npx vitest run` → **191 passed, 2 skipped (193), exit 0** (same baseline as Phase 7, re-confirmed before and after this phase's `docker-compose.yml` change, which touches no application code). `npm run build` → exit 0, same 13 routes. `npx eslint .` → 0 errors, same 4 pre-existing warnings. `npx tsc --noEmit` → clean. `npm audit` → same 4 moderate (dev-only `esbuild` via `drizzle-kit`), re-confirmed fresh, matching Phase 7's figure exactly.
+
+**Known gaps, carried forward honestly (full prioritized list in `REMAINING_WORK.md`):** JS-rendering (`--browser`) crawl mode still never exercised — confirmed again that neither Docker image bundles a Chromium-family browser; rate limiters remain single-process/in-memory by design; no live Stripe account ever exercised against the real API; Server Action error messages still redacted in production builds (unfixed, not newly found — see `REMAINING_WORK.md` item 5); vendored crawler binaries still committed to git; the "premium UI/UX" design-system pass (Additional Directive, below) remains entirely unstarted — this phase's scope was deployment prep, not that directive.
 
 ## Additional Directive — Premium UI/UX & Reverse Engineering
 - [ ] Design system (color/typography/spacing/radius/elevation/motion tokens)
@@ -191,17 +199,22 @@ All docs live in `seo-platform/docs/`.
 - [ ] Independent review pass: security, duplication, dead code, accessibility, perf regressions
 
 ## Required Final Deliverables
-- [ ] `README.md`
-- [ ] `ARCHITECTURE.md`
-- [ ] `IMPLEMENTATION_PLAN.md` (this file, kept current)
-- [ ] `TEST_RESULTS.md`
-- [ ] `SECURITY_REVIEW.md`
-- [ ] `DEPLOYMENT.md`
-- [ ] `CHANGELOG.md`
-- [ ] `REMAINING_WORK.md`
-- [ ] `REVERSE_ENGINEERING.md`
-- [ ] `FEATURE_COMPARISON.md`
-- [ ] `INTEGRATION_ARCHITECTURE.md`
+- [x] `README.md` (`seo-platform/README.md`, Phase 8)
+- [x] `ARCHITECTURE.md` (Phase 1)
+- [x] `IMPLEMENTATION_PLAN.md` (this file, kept current through Phase 8)
+- [x] `TEST_RESULTS.md` (Phase 7)
+- [x] `SECURITY_REVIEW.md` (Phase 7)
+- [x] `DEPLOYMENT.md` (Phase 8)
+- [x] `CHANGELOG.md` (Phase 8)
+- [x] `REMAINING_WORK.md` (Phase 6, updated through Phase 8)
+- [x] `REVERSE_ENGINEERING.md` (Phase 1)
+- [x] `FEATURE_COMPARISON.md` (Phase 1)
+- [x] `INTEGRATION_ARCHITECTURE.md` (Phase 3)
+
+All eleven required deliverables exist and were verified present on
+disk at the end of Phase 8. The separate "Additional Directive" below
+(premium UI/UX pass) is **not** part of this list and remains
+unstarted — see its own section and `REMAINING_WORK.md` item 14.
 
 ---
 

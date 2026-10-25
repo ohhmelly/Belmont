@@ -56,6 +56,15 @@ services:
       PORT: 3000
     ports:
       - "127.0.0.1:3000:3000"
+    # Phase 8 deployment-prep fix: generateReport (src/lib/reports/generate.ts)
+    # writes PDF/HTML/CSV/JSON report files to ./storage/reports from this
+    # app process directly. Without a named volume here, those files live
+    # only in this container's writable layer and are silently lost on
+    # every `docker compose up --build` / image update / container
+    # recreation — a real gap, found and fixed in this phase. See
+    # docs/DEPLOYMENT.md "Persistent storage" and scripts/backup.sh.
+    volumes:
+      - app_reports:/app/storage/reports
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -138,3 +147,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+  app_reports:

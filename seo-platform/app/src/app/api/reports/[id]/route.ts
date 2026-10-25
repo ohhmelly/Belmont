@@ -1,33 +1,38 @@
 /**
- * Download a previously generated report file (Phase 4).
+ * Download a previously generated report file (Phase 4; Phase 6 adds
+ * tenant isolation).
  *
- * Auth bar matches the existing website results page
- * (src/app/dashboard/websites/[id]/page.tsx): any authenticated session
- * may fetch any report by id. This is the same level of protection the
- * rest of Phase 2/3's dashboard pages use today (no per-organization
- * ownership check yet) — tightening that is a pre-existing gap outside
- * Phase 4's scope, not something newly introduced here.
+ * Phase 6 fix: this used to check only "is there a session" and then
+ * stream ANY report by id — any authenticated user could download any
+ * other organization's report just by knowing/guessing its id. It now
+ * re-verifies server-side, via requireReportAccess, that the caller's
+ * organization actually owns the website this report belongs to.
+ *
+ * Uses the request's own `req.headers` (not `next/headers`'s
+ * `headers()`) so this Route Handler's auth check can be exercised
+ * directly in a test with a hand-built `NextRequest` — no running Next
+ * HTTP server required — while behaving identically in production,
+ * where `req.headers` already carries the real request's cookies.
  */
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { reports } from "@/db/app-schema";
+import { requireReportAccess, OrgAccessError } from "@/lib/auth/require-org-access";
 import { readReportFile, contentTypeForFormat } from "@/lib/reports/generate";
+import { logAudit } from "@/lib/audit/log";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestHeaders = await headers();
-  const session = await auth.api.getSession({ headers: requestHeaders });
-  if (!session) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [report] = await db.select().from(reports).where(eq(reports.id, id));
-  if (!report) {
-    return NextResponse.json({ error: "Report not found" }, { status: 404 });
+
+  let access;
+  try {
+    access = await requireReportAccess(id, { headersOverride: req.headers });
+  } catch (err) {
+    if (err instanceof OrgAccessError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
   }
+
+  const { report, website, session } = access;
 
   let buffer: Buffer;
   try {
@@ -36,6 +41,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     console.error("Failed to read report file:", err);
     return NextResponse.json({ error: "Report file missing on disk" }, { status: 410 });
   }
+
+  await logAudit({
+    organizationId: website.organizationId,
+    actorUserId: session.userId,
+    action: "report_downloaded",
+    targetType: "report",
+    targetId: report.id,
+    metadata: { format: report.format, websiteId: website.id },
+  });
 
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,

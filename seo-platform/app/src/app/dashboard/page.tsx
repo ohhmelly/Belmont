@@ -5,8 +5,11 @@ import { eq, and, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { websites, notifications } from "@/db/app-schema";
+import { getMembership } from "@/lib/auth/require-org-access";
+import { getOrgPlan } from "@/lib/plans/limits";
+import { countOrgWebsites, countOrgManualCrawlsThisMonth } from "@/lib/plans/quota";
 import { SignOutButton } from "./sign-out-button";
-import { addWebsite, markNotificationRead } from "./actions";
+import { addWebsite, markNotificationRead, inviteMemberAction } from "./actions";
 
 export default async function DashboardPage() {
   const requestHeaders = await headers();
@@ -37,6 +40,12 @@ export default async function DashboardPage() {
         .limit(10)
     : [];
 
+  const membership = activeOrg ? await getMembership(session.user.id, activeOrg.id) : null;
+  const role = membership?.role ?? null;
+  const planState = activeOrg ? await getOrgPlan(activeOrg.id) : null;
+  const websiteCount = activeOrg ? await countOrgWebsites(activeOrg.id) : 0;
+  const manualCrawlsThisMonth = activeOrg ? await countOrgManualCrawlsThisMonth(activeOrg.id) : 0;
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <header className="mb-10 flex items-center justify-between">
@@ -48,9 +57,75 @@ export default async function DashboardPage() {
         </div>
         <div className="text-right">
           <p className="text-sm">{session.user.email}</p>
+          {role && <p className="text-xs text-foreground/50">Role: {role}</p>}
           <SignOutButton />
         </div>
       </header>
+
+      {planState && (
+        <section className="mb-8 rounded-md border border-foreground/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-medium">
+                Plan: {planState.limits.label}{" "}
+                <span className="text-xs text-foreground/50">({planState.status})</span>
+              </h2>
+              <p className="mt-1 text-xs text-foreground/60">
+                {websiteCount}/{planState.limits.maxWebsites} websites &middot; {manualCrawlsThisMonth}/
+                {planState.limits.maxManualCrawlsPerMonth} manual crawls this month &middot; scheduling{" "}
+                {planState.limits.schedulingAllowed ? "allowed" : "not on this plan"}
+              </p>
+            </div>
+            <div className="flex gap-2 text-xs">
+              <Link
+                href="/dashboard/billing"
+                className="rounded-md border border-foreground/20 px-3 py-1.5 hover:bg-foreground/5"
+              >
+                Billing
+              </Link>
+              <Link
+                href="/dashboard/audit-log"
+                className="rounded-md border border-foreground/20 px-3 py-1.5 hover:bg-foreground/5"
+              >
+                Audit log
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {(role === "owner" || role === "admin") && activeOrg && (
+        <section className="mb-8 rounded-md border border-foreground/10 p-4 space-y-2">
+          <h2 className="text-sm font-medium">Invite a member</h2>
+          <p className="text-xs text-foreground/60">
+            Owner/admin only — a plain &quot;member&quot; cannot invite, change billing, or delete websites,
+            only view findings/reports and trigger manual crawls.
+          </p>
+          <form action={inviteMemberAction} className="flex flex-wrap gap-2">
+            <input
+              type="email"
+              name="email"
+              required
+              placeholder="teammate@example.com"
+              className="min-w-0 flex-1 rounded-md border border-foreground/20 bg-transparent px-3 py-2 text-sm"
+            />
+            <select
+              name="role"
+              defaultValue="member"
+              className="rounded-md border border-foreground/20 bg-transparent px-2 py-2 text-sm"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button
+              type="submit"
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
+            >
+              Invite
+            </button>
+          </form>
+        </section>
+      )}
 
       {unreadNotifications.length > 0 && (
         <section className="mb-8 space-y-2 rounded-md border border-amber-300/40 bg-amber-50/50 p-4 dark:bg-amber-950/20">

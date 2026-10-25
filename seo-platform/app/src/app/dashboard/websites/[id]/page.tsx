@@ -1,19 +1,14 @@
-import { redirect } from "next/navigation";
-import { headers } from "next/headers";
-import { eq, desc } from "drizzle-orm";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { websites, crawlJobs, findings, aiRecommendations, reports } from "@/db/app-schema";
-import { computeCrawlDiff } from "@/lib/findings-diff";
+import { redirect, notFound } from "next/navigation";
 import {
   triggerCrawl,
   verifyWebsite,
   generateReport,
   cancelCrawl,
   setWebsiteSchedule,
+  deleteWebsite,
 } from "../../actions";
-
-const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+import { loadWebsiteDetail } from "./data";
+import { OrgAccessError } from "@/lib/auth/require-org-access";
 
 export default async function WebsiteResultsPage({
   params,
@@ -21,61 +16,61 @@ export default async function WebsiteResultsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const requestHeaders = await headers();
-  const session = await auth.api.getSession({ headers: requestHeaders });
-  if (!session) redirect("/login");
 
-  const [website] = await db.select().from(websites).where(eq(websites.id, id));
-  if (!website) {
-    return (
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <p>Website not found.</p>
-      </main>
-    );
+  // Phase 6 tenant isolation: loadWebsiteDetail re-verifies server-side
+  // that the current session's organization actually owns this website
+  // id — it is NOT enough that the dashboard's own website list only
+  // links to the org's own sites, since any authenticated user could
+  // otherwise type/guess another org's website id directly into the URL.
+  let detail;
+  try {
+    detail = await loadWebsiteDetail(id);
+  } catch (err) {
+    if (err instanceof OrgAccessError) {
+      if (err.status === 401) redirect("/login");
+      // 403/404 both render as "not found" here — a website that
+      // exists but belongs to another org must look exactly like a
+      // website that doesn't exist at all, never "yes it exists, no
+      // you may not see it".
+      notFound();
+    }
+    throw err;
   }
 
-  const jobs = await db
-    .select()
-    .from(crawlJobs)
-    .where(eq(crawlJobs.websiteId, id))
-    .orderBy(desc(crawlJobs.startedAt));
-
-  const latestJob = jobs[0] ?? null;
-
-  const siteFindings = latestJob
-    ? await db.select().from(findings).where(eq(findings.crawlJobId, latestJob.id))
-    : [];
-
-  siteFindings.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
-
-  const latestCompletedJob = jobs.find((j) => j.status === "completed") ?? null;
-
-  const recommendations = latestCompletedJob
-    ? await db
-        .select()
-        .from(aiRecommendations)
-        .where(eq(aiRecommendations.crawlJobId, latestCompletedJob.id))
-    : [];
-  const auditSummary = recommendations.find((r) => r.kind === "audit_summary") ?? null;
-  const devTasks = recommendations.filter((r) => r.kind === "dev_task");
-
-  const siteReports = latestCompletedJob
-    ? await db
-        .select()
-        .from(reports)
-        .where(eq(reports.crawlJobId, latestCompletedJob.id))
-        .orderBy(desc(reports.generatedAt))
-    : [];
-
-  const diff = await computeCrawlDiff(website.id);
+  const {
+    website,
+    role,
+    jobs,
+    latestJob,
+    siteFindings,
+    latestCompletedJob,
+    auditSummary,
+    devTasks,
+    siteReports,
+    diff,
+  } = detail;
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12 space-y-8">
-      <header>
-        <a href="/dashboard" className="text-sm text-foreground/60 hover:underline">
-          &larr; Dashboard
-        </a>
-        <h1 className="mt-2 text-2xl font-semibold">{website.url}</h1>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <a href="/dashboard" className="text-sm text-foreground/60 hover:underline">
+            &larr; Dashboard
+          </a>
+          <h1 className="mt-2 text-2xl font-semibold">{website.url}</h1>
+        </div>
+        {(role === "owner" || role === "admin") && (
+          <form action={deleteWebsite}>
+            <input type="hidden" name="websiteId" value={website.id} />
+            <button
+              type="submit"
+              className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+              title="Delete this website and all its crawl history (owner/admin only)"
+            >
+              Delete website
+            </button>
+          </form>
+        )}
       </header>
 
       <section className="rounded-md border border-foreground/10 p-4 space-y-3">

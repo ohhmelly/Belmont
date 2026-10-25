@@ -19,6 +19,7 @@ import { websites, crawlJobs } from "@/db/app-schema";
 import { enqueueCrawl, getBoss, CRAWL_WEBSITE_QUEUE } from "@/lib/queue";
 import { cancelCrawl } from "@/app/dashboard/actions";
 import { startFixtureServer, type FixtureServerHandle } from "@/lib/test-support/fixture-server";
+import { createUserAndOrg } from "@/lib/test-support/auth-fixtures";
 
 const APP_ROOT = path.resolve(process.cwd());
 const TSX_PREFLIGHT = path.join(APP_ROOT, "node_modules", "tsx", "dist", "preflight.cjs");
@@ -58,11 +59,16 @@ async function pollUntil<T>(fn: () => Promise<T>, predicate: (v: T) => boolean, 
 describe("crawl job cancellation (real pg-boss + real Postgres)", () => {
   let orgId: string;
   let websiteId: string;
+  let ownerHeaders: Headers;
 
   beforeAll(async () => {
-    const uniq = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    orgId = `test-org-cancel-${uniq}`;
-    await db.insert(organizations).values({ id: orgId, name: "Cancel Test Org", slug: `test-org-cancel-${uniq}`, createdAt: new Date() });
+    // Phase 6: cancelCrawl now re-verifies server-side that the caller's
+    // org owns the crawl job (see require-org-access.ts), so this test
+    // needs a REAL authenticated session in the owning org, not just a
+    // bare organizations row.
+    const owner = await createUserAndOrg("CancelTest-Owner");
+    orgId = owner.organizationId;
+    ownerHeaders = owner.headers;
     const [website] = await db
       .insert(websites)
       .values({ organizationId: orgId, url: "https://example.invalid/", verificationToken: "test-token" })
@@ -89,7 +95,7 @@ describe("crawl job cancellation (real pg-boss + real Postgres)", () => {
     formData.set("crawlJobId", job.id);
     formData.set("websiteId", websiteId);
     try {
-      await cancelCrawl(formData);
+      await cancelCrawl(formData, ownerHeaders);
     } catch (err) {
       // cancelCrawl's real work (the DB update + pg-boss cancel, both
       // asserted below) runs and completes BEFORE its trailing

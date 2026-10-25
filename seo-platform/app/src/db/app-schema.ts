@@ -17,7 +17,7 @@ import {
   integer,
   boolean,
 } from "drizzle-orm/pg-core";
-import { organizations } from "./auth-schema";
+import { organizations, users } from "./auth-schema";
 
 /**
  * Websites a tenant has registered for crawling/SEO auditing.
@@ -232,6 +232,82 @@ export const notifications = pgTable("notifications", {
   title: text("title").notNull(),
   body: text("body").notNull(),
   isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * One org's plan/billing state (Phase 6).
+ *
+ * `plan` is one of PLAN_IDS in src/lib/plans/limits.ts (free | starter |
+ * professional | agency) — the example/configurable tiers from the
+ * project spec, NOT validated market prices (see that file's header
+ * comment). An org with no row here is treated as "free" by
+ * src/lib/plans/limits.ts#getOrgPlan, so this table only needs a row once
+ * an org actually changes plan or completes Stripe checkout.
+ *
+ * `status` mirrors Stripe subscription status ("active" | "trialing" |
+ * "past_due" | "canceled" | "incomplete" | ...) for a Stripe-backed plan,
+ * or "active" for a manually-set plan with no Stripe subscription at all.
+ * `stripeCustomerId`/`stripeSubscriptionId` are set once a checkout
+ * completes; see src/lib/billing/plan-sync.ts, which is the ONLY code
+ * that should write to this table from a webhook.
+ */
+export const orgPlans = pgTable("org_plans", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  plan: varchar("plan", { length: 32 }).notNull().default("free"),
+  status: varchar("status", { length: 32 }).notNull().default("active"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Idempotency ledger for processed Stripe webhook events (Phase 6).
+ *
+ * Stripe explicitly documents that a given webhook event can be
+ * delivered more than once (retries on timeout/5xx, manual resend from
+ * the dashboard, etc.) and that handlers must be written to tolerate
+ * that. We record each event's id (Stripe's own `evt_...` id, globally
+ * unique) the first time we successfully apply it; see
+ * src/lib/billing/plan-sync.ts#applyStripeEvent, which checks this table
+ * BEFORE touching org_plans and inserts into it atomically with that
+ * update so a duplicate delivery is a no-op the second time.
+ */
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: varchar("type", { length: 64 }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Lightweight audit trail (Phase 6). One row per meaningful tenant
+ * action — see src/lib/audit/log.ts#logAudit, the single helper that
+ * writes here (not an elaborate framework: callers pass a short
+ * `action` string, the resource type/id it applied to, and a free-form
+ * `metadata` blob for anything else worth keeping, e.g. the crawl job's
+ * previous status). `actorUserId` is nullable because a scheduled crawl
+ * firing (pg-boss's own cron, no human request) is still worth logging
+ * but has no human actor.
+ */
+export const auditLog = pgTable("audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 64 }).notNull(),
+  targetType: varchar("target_type", { length: 32 }),
+  targetId: text("target_id"),
+  metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

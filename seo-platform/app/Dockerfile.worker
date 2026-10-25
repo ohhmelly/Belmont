@@ -34,5 +34,14 @@ COPY vendor/siteone-crawler/siteone-crawler /opt/siteone-crawler/siteone-crawler
 COPY vendor/siteone-crawler/LICENSE /opt/siteone-crawler/LICENSE
 RUN chmod +x /opt/siteone-crawler/siteone-crawler
 
+# Phase 7 security fix: previously ran as root with no USER directive.
+# This process spawns the siteone-crawler binary as a subprocess against
+# arbitrary (SSRF-validated, but still externally-controlled) URLs — the
+# highest-risk process in this app to leave running as root. Create and
+# switch to an unprivileged user, same as the app image.
+RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid nodejs --shell /usr/sbin/nologin --no-create-home worker \
+  && chown -R worker:nodejs /app /opt/siteone-crawler
+
 EXPOSE 3001
+USER worker
 CMD ["node_modules/.bin/tsx", "src/worker.ts"]

@@ -26,6 +26,18 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    # Phase 7 security/QA fix: no service here had a memory/CPU ceiling —
+    # a runaway query, crawl, or memory leak in any one container could
+    # exhaust the whole Dell server's resources and take the others down
+    # with it. `docker compose up` (not just Swarm) honors `deploy.resources.limits`
+    # since Compose V2. These are conservative starting points for a
+    # small self-hosted box, not benchmarked — tune per the real Dell
+    # server's actual RAM/CPU before relying on them (see DEPLOYMENT.md).
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
 
   app:
     build:
@@ -50,6 +62,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
 
   worker:
     build:
@@ -87,6 +104,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    # Higher than app/postgres: WORKER_CONCURRENCY (default 2) real
+    # siteone-crawler subprocesses may run at once, each with its own
+    # memory footprint for a multi-page crawl.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
 
   # Local AI provider (Phase 4+). Self-hosted and optional — the app and
   # worker must work without it. Off by default; bring it up explicitly
@@ -99,6 +124,16 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "127.0.0.1:11434:11434"
+    # Deliberately generous and commented rather than tightly tuned: how
+    # much RAM Ollama needs depends entirely on which model is pulled
+    # (the project's own qwen2.5:0.5b needs very little; a larger model
+    # needs much more) — set this to match whatever model is actually in
+    # use on the real deployment target before relying on it.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
 
 volumes:
   postgres_data:

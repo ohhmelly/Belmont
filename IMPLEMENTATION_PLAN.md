@@ -160,11 +160,22 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps (carried from both sides, neither superseded the other on these):** no live/test Stripe account was ever exercised against the real Stripe API in either session — only offline signature verification was proven. No org-switcher UI — "active org" is still "first org returned for this user."
 
-## Phase 7 — Security & QA
-- [ ] Full test suite: unit, integration, API, crawler, migrations, auth, tenant isolation, reports, jobs, billing webhooks, E2E, security regressions
-- [ ] Dependency vulnerability scan
-- [ ] `SECURITY_REVIEW.md`
-- [ ] `TEST_RESULTS.md` (only tests actually executed, with real pass/fail)
+## Phase 7 — Security & QA ✅ COMPLETE (2026-10-25, independently re-verified)
+- [x] Full test suite — 30 files, 191 passed, 2 skipped (Ollama-dependent, confirmed honestly unreachable in this sandbox, not swept under the rug), 0 failed
+- [x] Dependency vulnerability scan — real before/after: 5 (4 moderate, 1 high) → 4 (all moderate). The high was an **unused `express` dependency** (zero imports anywhere, dead weight from the two-session merge) — removed outright, not just patched. Remaining 4 are `esbuild` via `drizzle-kit`'s dev-only loader; `npm audit fix --force` only offers a 13-minor-version downgrade of drizzle-kit for a dev-server-only issue never invoked by this project's usage — accepted and documented rather than forced or hidden
+- [x] Found and fixed: **no password-reset flow existed at all** — wired up via Better Auth's `sendResetPassword` (reuses Phase 5's optional-SMTP no-op-safe helper), proven with a real test including an account-enumeration check (unknown email gets an identical response, no verification row created)
+- [x] Found and fixed: Better Auth's built-in rate limiter was implicitly OFF in dev (only implicitly on via `NODE_ENV=production`) — made explicit; proven load-bearing by deliberately disabling it, watching the test fail, then restoring it
+- [x] Found and fixed: no rate limiting on manual crawl triggering beyond the monthly quota (which does nothing against a burst) — added a small in-memory per-user limiter, proven on a plan with an *unlimited* monthly quota specifically so only the new burst limiter could be the one blocking the 11th rapid call
+- [x] Found and fixed: **CSV formula injection (CWE-1236)** in the report generator — a crawled page title starting with `=`/`+`/`-`/`@`/tab/CR would execute as a formula when opened in Excel/Sheets; fixed with the standard leading-quote mitigation, proven with 8 tests
+- [x] HTML report XSS — reviewed and confirmed already-correct escaping, proven load-bearing the same way (removed one `escapeHtml()` call, watched the regression test fail, restored it)
+- [x] Endpoint/action audit — full table in `SECURITY_REVIEW.md`; every route/action is either intentionally public or gated via `require-org-access.ts`/session/role checks; no ungated endpoint found
+- [x] Docker hardening — both Dockerfiles now run as non-root users, added a root `.dockerignore` (the worker image's repo-root build context was sending `app/.env` and `.git` to the Docker daemon on every build), added CPU/memory resource limits to every `docker-compose.yml` service. **Not verified with an actual `docker compose build`** — no usable Docker daemon in this sandbox (same honest caveat carried since Phase 2/3) — needs a spot-check on a real machine
+- [x] `SECURITY_REVIEW.md` — full writeup, before/after audit numbers, endpoint-gating table, explicit known-gaps section
+- [x] `TEST_RESULTS.md` — real counts, build/lint status, honest per-category coverage map
+
+**Independently re-verified in this session, on the real code (not just trusting the report):** confirmed `express` actually removed and `npm audit` shows 4/0/0 (moderate/high/critical) via a direct re-run; confirmed the rate-limit config, CSV formula-injection fix (even more thorough than claimed — also covers tab/CR, not just the basic OWASP four), password-reset wiring, and both Dockerfiles' non-root `USER` directives by reading the source directly; confirmed `docker-compose.yml` has resource limits on all 4 services. `npx vitest run` → **191 passed, 2 skipped (193), exit 0**. `npm run build` → exit 0, 13 routes (including new `/forgot-password`, `/reset-password`). `npx eslint .` → 0 errors, 4 pre-existing warnings in files this phase never touched.
+
+**Known gaps, carried forward honestly:** 4 moderate dependency findings accepted (dev-only, unreachable in production usage, forcing the fix would mean a major downgrade); Docker changes unverified by an actual build in any sandbox so far; in-memory rate limiters are single-process by design (matches this project's single-instance target, won't coordinate across multiple app instances — a real multi-instance deployment would need a shared store); production needs a correctly configured reverse proxy for Better Auth's IP-based rate limiting to key on real client IPs, flagged for `DEPLOYMENT.md`.
 
 ## Phase 8 — Deployment Prep
 - [ ] Docker Compose finalized for Linux target (Dell server) and Windows dev

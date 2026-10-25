@@ -18,11 +18,35 @@ import type { ReportPayload } from "./report-data";
 
 const COLUMNS = ["severity", "category", "url", "title", "httpStatus", "sourceEngine", "discoveredAt"] as const;
 
-function escapeCsvField(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+/**
+ * Phase 7 security fix: CSV formula injection (a.k.a. "CSV injection",
+ * CWE-1236). `title`/`category`/`url` come straight from crawled page
+ * content (an untrusted page's <title>, meta description, etc.) with
+ * no restriction on their first character. If a field's value happens
+ * to start with `=`, `+`, `-`, or `@`, Excel/Google Sheets/LibreOffice
+ * treat the whole cell as a formula when the CSV is opened — a crawled
+ * page titled e.g. `=cmd|'/c calc'!A1` (old Excel DDE) or
+ * `=HYPERLINK("http://evil","click")` would execute/act as a formula
+ * for whoever opens this export, not just display as text. Prefixing
+ * such a value with a single quote is the standard mitigation (OWASP
+ * CSV Injection cheat sheet): spreadsheet apps then render the leading
+ * quote-prefixed text as a literal string, never evaluate it.
+ */
+const FORMULA_TRIGGER_CHARS = new Set(["=", "+", "-", "@", "\t", "\r"]);
+
+function neutralizeCsvFormula(value: string): string {
+  if (value.length > 0 && FORMULA_TRIGGER_CHARS.has(value[0])) {
+    return `'${value}`;
   }
   return value;
+}
+
+function escapeCsvField(value: string): string {
+  const safe = neutralizeCsvFormula(value);
+  if (/[",\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
 }
 
 export function generateCsv(payload: ReportPayload): string {

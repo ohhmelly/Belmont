@@ -26,6 +26,32 @@ import {
   isAiRecommendationsAllowed,
 } from "@/lib/billing/quota";
 import { logAudit } from "@/lib/audit/log";
+import { checkRateLimit, RateLimitError } from "@/lib/rate-limit";
+
+/**
+ * Phase 7 security fix: a per-user burst cap on manually triggering a
+ * crawl, separate from (and tighter than) the monthly plan quota in
+ * billing/quota.ts. The monthly quota stops someone from running more
+ * crawls than their plan allows over a whole month; it does nothing to
+ * stop a short burst of rapid-fire requests (each one spawning a real
+ * crawler subprocess on the worker) within that same month's budget.
+ * 10 manual crawl triggers per 60 seconds per user is generous for any
+ * real workflow (clicking "Run crawl" repeatedly on a few sites) while
+ * still bounding worst-case abuse.
+ */
+const MANUAL_CRAWL_BURST_MAX = 10;
+const MANUAL_CRAWL_BURST_WINDOW_MS = 60_000;
+
+function enforceManualCrawlBurstLimit(userId: string): void {
+  try {
+    checkRateLimit(`manual-crawl:${userId}`, MANUAL_CRAWL_BURST_MAX, MANUAL_CRAWL_BURST_WINDOW_MS);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      throw new Error(err.message);
+    }
+    throw err;
+  }
+}
 
 /**
  * Phase 6 tenant-isolation fix.
@@ -68,6 +94,7 @@ export async function addWebsite(formData: FormData, headersOverride?: Headers):
   if (!url) throw new Error("URL is required");
   new URL(url); // throws on malformed input before it ever reaches the DB/crawler
 
+  enforceManualCrawlBurstLimit(session.userId);
   await assertCanAddWebsite(organizationId);
   await assertCanRunManualCrawl(organizationId);
 
@@ -120,6 +147,7 @@ export async function triggerCrawl(formData: FormData, headersOverride?: Headers
   const websiteId = String(formData.get("websiteId") ?? "");
   const { website, session } = await requireWebsiteAccess(websiteId, { headersOverride });
 
+  enforceManualCrawlBurstLimit(session.userId);
   await assertCanRunManualCrawl(website.organizationId);
 
   const [job] = await db

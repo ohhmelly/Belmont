@@ -27,12 +27,28 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Phase 7 security fix: this image previously ran as root (node:22-slim's
+# default user) with no USER directive at all — a container-escape or
+# RCE in this process, or in any dependency, would have had root inside
+# the container for free. Create and switch to an unprivileged user
+# instead, matching the standard Next.js standalone-output pattern.
+RUN groupadd --gid 1001 nodejs && useradd --uid 1001 --gid nodejs --shell /usr/sbin/nologin --no-create-home nextjs
+
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# generateReport (src/lib/reports/generate.ts) writes PDF/HTML/CSV/JSON
+# report files to ./storage/reports from this same app process (a
+# Server Action calling it directly, not only the worker) — create that
+# directory now, owned by the unprivileged user, so it stays writable
+# after USER drops root.
+RUN mkdir -p /app/storage/reports && chown -R nextjs:nodejs /app
+
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+
+USER nextjs
 
 CMD ["node", "server.js"]

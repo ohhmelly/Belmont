@@ -1,0 +1,22 @@
+# Phase 7 security/hygiene fix: Dockerfile.worker's build CONTEXT is the
+# repo root (not ./app — see docker-compose.yml's `worker.build.context`
+# and Dockerfile.worker's header comment, since it also needs
+# vendor/siteone-crawler/), and the repo root previously had no
+# .dockerignore at all. That meant `docker build` sent the ENTIRE repo —
+# app/node_modules, app/.next, both .git histories' worth of objects,
+# fixtures/node_modules, and critically app/.env (real local secrets in
+# a dev checkout) — to the Docker daemon as build context on every
+# build. The worker Dockerfile's own COPY instructions are selective
+# enough that none of this ever lands in an image layer, but sending a
+# real .env file to the daemon at all is unnecessary exposure, and
+# node_modules/.git bloat every build's context transfer for no reason.
+
+**/node_modules
+**/.next
+**/.git
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+storage/reports

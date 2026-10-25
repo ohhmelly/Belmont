@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { websites, crawlJobs, notifications } from "@/db/app-schema";
+import { validateUrlForCrawl, CrawlSafetyError } from "@/lib/crawl-safety";
 import { generateVerificationToken, verifyByMetaTag, verifyByDnsTxt } from "@/lib/ownership-verification";
 import { enqueueCrawl, applyWebsiteSchedule, cancelCrawlJob, type AuditScheduleCadence } from "@/lib/queue";
 import { generateAndStoreRecommendations } from "@/lib/ai/generate-and-store";
@@ -18,8 +19,12 @@ import {
   resolveHeaders,
   OrgAccessError,
 } from "@/lib/auth/require-org-access";
-import { assertCanAddWebsite, assertCanTriggerManualCrawl, assertSchedulingAllowed } from "@/lib/plans/quota";
-import { getOrgPlan } from "@/lib/plans/limits";
+import {
+  assertCanAddWebsite,
+  assertCanRunManualCrawl,
+  assertCanSchedule,
+  isAiRecommendationsAllowed,
+} from "@/lib/billing/quota";
 import { logAudit } from "@/lib/audit/log";
 
 /**
@@ -52,7 +57,10 @@ import { logAudit } from "@/lib/audit/log";
  * show the verification token/status separately.
  *
  * Phase 6: enforces the org's plan's `maxWebsites` quota, and the
- * enqueued crawl counts toward `maxManualCrawlsPerMonth`.
+ * enqueued crawl counts toward `manualCrawlsPerMonth`. Also validates
+ * the URL for SSRF-unsafe targets (private/loopback/reserved ranges)
+ * BEFORE creating anything, so a plan-exceeding or structurally-unsafe
+ * request never leaves a half-created website behind.
  */
 export async function addWebsite(formData: FormData, headersOverride?: Headers): Promise<void> {
   const { organizationId, session } = await requireActiveOrg(headersOverride);
@@ -61,7 +69,23 @@ export async function addWebsite(formData: FormData, headersOverride?: Headers):
   new URL(url); // throws on malformed input before it ever reaches the DB/crawler
 
   await assertCanAddWebsite(organizationId);
-  await assertCanTriggerManualCrawl(organizationId);
+  await assertCanRunManualCrawl(organizationId);
+
+  // Fail fast with a clear message instead of creating a website that is
+  // structurally guaranteed to fail its first crawl: a private/loopback/
+  // reserved-range target isn't a transient problem that might resolve
+  // itself, so there is no reason to let it through only to surface as a
+  // confusing "critical finding" after the fact (the gap this replaces).
+  try {
+    await validateUrlForCrawl(url);
+  } catch (err) {
+    if (err instanceof CrawlSafetyError) {
+      throw new Error(
+        `This URL can't be audited: ${err.message}. Add a publicly reachable website you control instead.`
+      );
+    }
+    throw err;
+  }
 
   const token = generateVerificationToken();
   const [website] = await db
@@ -96,7 +120,7 @@ export async function triggerCrawl(formData: FormData, headersOverride?: Headers
   const websiteId = String(formData.get("websiteId") ?? "");
   const { website, session } = await requireWebsiteAccess(websiteId, { headersOverride });
 
-  await assertCanTriggerManualCrawl(website.organizationId);
+  await assertCanRunManualCrawl(website.organizationId);
 
   const [job] = await db
     .insert(crawlJobs)
@@ -161,7 +185,7 @@ export async function cancelCrawl(formData: FormData, headersOverride?: Headers)
  * removes the pg-boss schedule entry to match.
  *
  * Phase 6: turning scheduling ON requires the org's plan to allow it
- * (`schedulingAllowed`); turning it off ("none") is always allowed.
+ * (`assertCanSchedule`); turning it off ("none") is always allowed.
  */
 export async function setWebsiteSchedule(formData: FormData, headersOverride?: Headers): Promise<void> {
   const websiteId = String(formData.get("websiteId") ?? "");
@@ -169,14 +193,21 @@ export async function setWebsiteSchedule(formData: FormData, headersOverride?: H
   if (!["none", "daily", "weekly", "monthly"].includes(cadence)) {
     throw new Error("Invalid cadence");
   }
-  const { website } = await requireWebsiteAccess(websiteId, { headersOverride });
+  const { website, session } = await requireWebsiteAccess(websiteId, { headersOverride });
 
-  if (cadence !== "none") {
-    await assertSchedulingAllowed(website.organizationId);
-  }
+  await assertCanSchedule(website.organizationId, cadence);
 
   await db.update(websites).set({ auditSchedule: cadence }).where(eq(websites.id, websiteId));
   await applyWebsiteSchedule(websiteId, cadence);
+
+  await logAudit({
+    organizationId: website.organizationId,
+    actorUserId: session.userId,
+    action: "schedule_changed",
+    targetType: "website",
+    targetId: website.id,
+    metadata: { cadence },
+  });
 
   revalidatePath(`/dashboard/websites/${websiteId}`);
 }
@@ -231,10 +262,12 @@ export async function generateReport(formData: FormData, headersOverride?: Heade
     throw new Error("No completed crawl job to report on yet. Run a crawl first.");
   }
 
-  const { limits } = await getOrgPlan(website.organizationId);
-  if (limits.aiRecommendationsAllowed) {
-    await generateAndStoreRecommendations(latestCompletedJob.id);
-  }
+  // Phase 6 plan gating: Professional/Agency get real AI-generated
+  // recommendations when Ollama is configured/reachable; Free/Starter
+  // always get the deterministic template instead (never nothing — see
+  // GenerateAndStoreOptions in generate-and-store.ts).
+  const allowAiProvider = await isAiRecommendationsAllowed(website.organizationId);
+  await generateAndStoreRecommendations(latestCompletedJob.id, { allowAiProvider });
   await generateReportsForCrawlJob(latestCompletedJob.id, ALL_FORMATS);
 
   await logAudit({
@@ -306,53 +339,6 @@ export async function inviteMemberAction(formData: FormData, headersOverride?: H
   });
 
   revalidatePath("/dashboard");
-}
-
-/**
- * Start a Stripe Checkout session for the caller's org to subscribe to a
- * paid plan. Phase 6: owner/admin only ("change billing/plan" is a
- * higher-privilege action, same bucket as inviting members or deleting
- * the org). TEST MODE ONLY — see src/lib/billing/stripe-client.ts; if
- * `STRIPE_SECRET_KEY`/the plan's price id aren't configured in this
- * environment, this throws a clear error rather than silently doing
- * nothing (there is no live Stripe account wired up in this sandbox —
- * see the Phase 6 completion report for exactly what was and wasn't
- * verified against a real Stripe API).
- */
-export async function createCheckoutSessionAction(formData: FormData, headersOverride?: Headers): Promise<void> {
-  const { organizationId } = await requireActiveOrg(headersOverride, "admin");
-  const plan = String(formData.get("plan") ?? "");
-  const priceEnvKey =
-    plan === "starter"
-      ? "STRIPE_PRICE_STARTER"
-      : plan === "professional"
-        ? "STRIPE_PRICE_PROFESSIONAL"
-        : plan === "agency"
-          ? "STRIPE_PRICE_AGENCY"
-          : null;
-  if (!priceEnvKey) throw new Error(`Unknown plan "${plan}"`);
-  const priceId = process.env[priceEnvKey];
-  if (!priceId) {
-    throw new Error(
-      `${priceEnvKey} is not configured in this environment. Stripe checkout is TEST MODE ONLY and needs a test-mode price id — see .env.example.`
-    );
-  }
-
-  const { getStripeClient } = await import("@/lib/billing/stripe-client");
-  const stripe = getStripeClient();
-  const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    client_reference_id: organizationId,
-    metadata: { organizationId },
-    subscription_data: { metadata: { organizationId } },
-    success_url: `${baseUrl}/dashboard/billing?checkout=success`,
-    cancel_url: `${baseUrl}/dashboard/billing?checkout=cancelled`,
-  });
-
-  if (!checkoutSession.url) throw new Error("Stripe did not return a checkout URL");
-  redirect(checkoutSession.url);
 }
 
 /**

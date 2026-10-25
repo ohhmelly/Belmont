@@ -151,6 +151,28 @@ describe("crawler-adapter accuracy (real binary + real fixture server)", () => {
     expect(hits).toHaveLength(1);
   });
 
+  it("AI-crawler-visibility: detects robots.txt blocking GPTBot (real fixture rule, real crawl)", () => {
+    const hits = findBy("ai_crawler_blocked");
+    const gptbot = hits.filter((f) => f.evidence.userAgent === "GPTBot");
+    expect(gptbot).toHaveLength(1);
+    expect(gptbot[0].severity).toBe("medium");
+    expect(gptbot[0].title).toContain("GPTBot");
+  });
+
+  it("AI-crawler-visibility: does NOT falsely flag bots the fixture's robots.txt does not block", () => {
+    const hits = findBy("ai_crawler_blocked");
+    const blockedBots = hits.map((f) => f.evidence.userAgent);
+    expect(blockedBots).not.toContain("ClaudeBot");
+    expect(blockedBots).not.toContain("PerplexityBot");
+  });
+
+  it("AI-crawler-visibility: flags missing llms.txt as a low-severity informational finding (the fixture has none)", () => {
+    const hits = findBy("llms_txt_missing");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].severity).toBe("low");
+    expect(meta.llmsTxtFound).toBe(false);
+  });
+
   it("SSRF: blocks the malicious redirect to a private/link-local address instead of following it", () => {
     const blocked = findBy("ssrf_blocked_redirect", "/malicious-redirect");
     expect(blocked).toHaveLength(1);

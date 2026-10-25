@@ -33,8 +33,15 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1792886530100,
-      "tag": "0004_greedy_wildside",
+      "when": 1792635184676,
+      "tag": "0004_lucky_ultimo",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792889039640,
+      "tag": "0005_fresh_jackpot",
       "breakpoints": true
     }
   ]

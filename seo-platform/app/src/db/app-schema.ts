@@ -207,6 +207,69 @@ export const reports = pgTable("reports", {
 });
 
 /**
+ * One subscription row per organization (Phase 6).
+ *
+ * Plan definitions (the numeric limits each `plan` value maps to) live in
+ * src/lib/billing/plans.ts, not here — this table only records WHICH plan
+ * an org is on and the Stripe linkage, never the limit numbers themselves,
+ * so changing a limit never requires a migration.
+ *
+ * Free-plan orgs do not strictly need a row here — `getOrCreateSubscription`
+ * (src/lib/billing/quota.ts) lazily creates one with plan="free" the first
+ * time any billing-aware code asks about an org that doesn't have one yet,
+ * rather than hooking into Better Auth's organization-creation lifecycle
+ * (out of scope to touch this phase). Once created, the row is the single
+ * source of truth for that org's plan.
+ *
+ * `status` mirrors Stripe's own subscription statuses where applicable
+ * (active | trialing | past_due | canceled | incomplete), plus "active"
+ * as the default for a Free-plan/mock row that was never a real Stripe
+ * subscription at all.
+ *
+ * `stripeCustomerId`/`stripeSubscriptionId` are null until a real Stripe
+ * checkout actually completes (see src/lib/billing/stripe-provider.ts);
+ * the MockBillingProvider used when STRIPE_SECRET_KEY is unset never
+ * populates them, flipping `plan` directly instead.
+ */
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .unique()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** free | starter | professional | agency — see src/lib/billing/plans.ts */
+  plan: varchar("plan", { length: 16 }).notNull().default("free"),
+  /** active | trialing | past_due | canceled | incomplete */
+  status: varchar("status", { length: 16 }).notNull().default("active"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Idempotency ledger for Stripe webhook events (Phase 6). `id` is the
+ * real Stripe event id (`evt_...`); a unique-constraint-backed insert
+ * (`onConflictDoNothing`) before any state change is applied is what
+ * makes replaying/double-delivering the same webhook a no-op instead of
+ * double-applying a plan change — see
+ * src/lib/billing/stripe-provider.ts#handleWebhookEvent.
+ */
+export const processedWebhookEvents = pgTable("processed_webhook_events", {
+  id: text("id").primaryKey(),
+  type: varchar("type", { length: 64 }).notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * An in-app notification (Phase 5), surfaced on the dashboard without any
  * external service required. The default, always-on notifier
  * (src/lib/notifications/notifier.ts) writes one of these whenever a
@@ -233,57 +296,6 @@ export const notifications = pgTable("notifications", {
   body: text("body").notNull(),
   isRead: boolean("is_read").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-/**
- * One org's plan/billing state (Phase 6).
- *
- * `plan` is one of PLAN_IDS in src/lib/plans/limits.ts (free | starter |
- * professional | agency) — the example/configurable tiers from the
- * project spec, NOT validated market prices (see that file's header
- * comment). An org with no row here is treated as "free" by
- * src/lib/plans/limits.ts#getOrgPlan, so this table only needs a row once
- * an org actually changes plan or completes Stripe checkout.
- *
- * `status` mirrors Stripe subscription status ("active" | "trialing" |
- * "past_due" | "canceled" | "incomplete" | ...) for a Stripe-backed plan,
- * or "active" for a manually-set plan with no Stripe subscription at all.
- * `stripeCustomerId`/`stripeSubscriptionId` are set once a checkout
- * completes; see src/lib/billing/plan-sync.ts, which is the ONLY code
- * that should write to this table from a webhook.
- */
-export const orgPlans = pgTable("org_plans", {
-  organizationId: text("organization_id")
-    .primaryKey()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  plan: varchar("plan", { length: 32 }).notNull().default("free"),
-  status: varchar("status", { length: 32 }).notNull().default("active"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
-  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-/**
- * Idempotency ledger for processed Stripe webhook events (Phase 6).
- *
- * Stripe explicitly documents that a given webhook event can be
- * delivered more than once (retries on timeout/5xx, manual resend from
- * the dashboard, etc.) and that handlers must be written to tolerate
- * that. We record each event's id (Stripe's own `evt_...` id, globally
- * unique) the first time we successfully apply it; see
- * src/lib/billing/plan-sync.ts#applyStripeEvent, which checks this table
- * BEFORE touching org_plans and inserts into it atomically with that
- * update so a duplicate delivery is a no-op the second time.
- */
-export const stripeEvents = pgTable("stripe_events", {
-  id: text("id").primaryKey(),
-  type: varchar("type", { length: 64 }).notNull(),
-  processedAt: timestamp("processed_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

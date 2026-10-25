@@ -19,6 +19,7 @@ export type AuditAction =
   | "website_deleted"
   | "crawl_triggered"
   | "crawl_cancelled"
+  | "schedule_changed"
   | "report_generated"
   | "report_downloaded"
   | "plan_changed"

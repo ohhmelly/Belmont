@@ -8,7 +8,65 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blo
 > (README, ARCHITECTURE, SECURITY_REVIEW, etc.) live inside `seo-platform/`
 > rather than the repo root.
 
+## Report-polish pass (2026-10-22/23, independently re-verified)
+
+Grounded in real competitor research (CrawlRaven's public sample report,
+Sitebulb/Ahrefs-style dashboards — see `docs/DESIGN_UPDATES.md`
+"Competitive reference"). Delivered:
+- **AI-crawler-visibility check** — a real feature gap, not just design:
+  flags GPTBot/ClaudeBot/PerplexityBot/etc. blocked in robots.txt (one
+  finding per blocked bot) and missing `llms.txt` (informational, low
+  severity). Verified against a real fixture crawl.
+- **Category score breakdown** (Technical/On-Page/Content/AI Visibility)
+  using the same deduction formula as the overall score, just scoped —
+  verified by hand-checking real crawl math.
+- **Visual polish**: inline-SVG circular score gauge and category tiles
+  in the HTML report, numbered sections (01–07), a historical-comparison
+  bar chart when 2+ crawls exist — no charting library added.
+- **Independently re-verified by me**, not just the implementing agent:
+  `tsc`/`build` clean, full test suite (159 passed, 2 skipped) re-run
+  myself, and the actual generated HTML/PDF report opened and visually
+  inspected in a real browser against real crawl data — gauge, tiles,
+  numbered sections, and the historical chart all render correctly with
+  honest data (clean categories correctly show 100/0 findings, not
+  omitted or faked).
+
+**Separate finding while testing this (not part of the report-polish
+work itself):** server actions that throw a clear, user-facing error
+(the SSRF validation message, Phase 6's quota messages) render as a
+cryptic "Minified React error #441" in the production build instead of
+the intended message — Next.js redacts thrown-error messages on the
+client in production by design. The real message IS logged server-side
+(confirmed: a real `QuotaError` with its full clear text was captured in
+server logs while the client only showed a digest). Fixing this properly
+means converting the affected forms to return structured results
+(`useActionState`) instead of throwing — a real, separate piece of work,
+tracked in `REMAINING_WORK.md`, not done as part of this pass.
+
 ---
+
+## Real-machine testing pass (2026-10-22, Windows dev machine, Remote Control)
+
+The app was actually installed and run on a real Windows 11 development
+machine (not the Linux build sandbox) for the first time, per this
+project's own "Windows dev / Linux prod" requirement. This surfaced and
+fixed real bugs no amount of sandbox testing would have caught:
+
+- **Crawler didn't run at all on Windows** (vendored binary was Linux-only)
+- **Tenant isolation gap** — any authenticated user could view/act on any
+  other org's websites/reports by guessing a UUID (now fixed everywhere)
+- SSRF-blocked crawls showed a confusing "finding" instead of failing
+  fast with a clear message at add-website time
+- `npm install` failed outright on a fresh clone (missing `.npmrc`,
+  fixed earlier) and `npm audit` dropped from 18 vulnerabilities (1
+  critical) to 9 (0 critical)
+- A real process-management footgun around restarting the worker (and a
+  second instance of the SAME category of bug found later, in the app
+  server this time — see Phase 6 note below)
+
+Full detail, plus what's still open, is in `REMAINING_WORK.md`. A
+`docs/DESIGN_UPDATES.md` punch list was also written for the still-
+not-started premium UI/UX pass (Part 3/5 of the original brief).
 
 ## Phase 0 — Housekeeping (this step)
 - [x] Inspect working directory and git history
@@ -84,20 +142,18 @@ All docs live in `seo-platform/docs/`.
 
 **Known gaps:** no single combined automated test proves "a real scheduled fire → real new findings → real notification row" as one unbroken chain — each link (diffing, notifier, worker wiring) is proven real individually, not the full chain end-to-end in one test. Deleting a website with a job still queued/retrying for it leaves an orphaned pg-boss job that fails cleanly on an FK violation (a sane terminal state, not stuck, but unhandled as a distinct case) — noted, not fixed, out of this phase's explicit scope.
 
-## Phase 6 — SaaS Features ✅ COMPLETE (2026-10-25, independently re-verified)
-- [x] Auth (registration, login, password hashing, sessions) — done in Phase 2, unchanged
-- [x] **Tenant isolation — the critical fix.** Confirmed gap (any authenticated user could view/cancel/download any org's data) is now closed via a single reusable helper (`src/lib/auth/require-org-access.ts`) used consistently across the website detail page, every server action, and the report download route — read directly and confirmed wired into all call sites, not just defined. Cross-org access returns 404 (not 403, to avoid confirming a resource exists), same-org under-privilege returns 403. **Proven with a real adversarial test** (`cross-org-isolation.test.ts`): two real orgs/users via real Better Auth sign-up, a real report file with secret content on disk, org B's real session denied on every call site with positive controls proving org A itself still works — reviewed this test directly, not just trusted the report
-- [x] Org roles enforced — `member` role denied owner/admin-only actions (our own `deleteWebsite` plus Better Auth's own built-in invite/role-change permissions), proven with a real test
-- [x] Plans/quotas — `PLAN_LIMITS` (free/starter/professional/agency), explicitly documented as example/configurable, not validated pricing; enforced for real on website count and monthly manual-crawl count, proven with real tests showing a free-plan org blocked and a higher-tier org not blocked at the same threshold
-- [x] Stripe adapter in test mode — real `stripe` SDK, real `stripe.webhooks.constructEvent` signature verification (reviewed source directly: refuses to even construct a client with a key matching `sk_live_`/`rk_live_`), idempotent webhook processing via a `stripe_events` table. No live or test Stripe account was available in this sandbox, so verification used Stripe's own documented offline helper (`generateTestHeaderString`) to HMAC-sign real payloads and POST them through the real route handler — valid/missing/wrong-secret/tampered/stale-timestamp signatures all behave correctly, duplicate event delivery applies exactly once
-- [x] Billing explicitly stays in test mode — documented in code comments and `.env.example`, live key construction is actively refused, not just discouraged
-- [x] Audit logging added (`audit_log` table, logged at login/website changes/crawl actions/report access/plan changes/membership changes) with a basic dashboard view — not originally scoped to this phase but a reasonable fit alongside org actions
+## Phase 6 — SaaS Features ✅ COMPLETE (2026-10-22, independently re-verified)
+- [x] Auth (registration, login, password hashing, sessions) — done in Phase 2
+- [x] Orgs, roles, members, tenant isolation — orgs/roles from Phase 2; the tenant-isolation *gap* found and fixed in this session's real-machine pass (see note above) is what makes this a genuine "done," not just "present"
+- [x] Plans/quotas — four plans (Free/Starter/Professional/Agency) as one config object, explicitly labeled configurable placeholders, not researched pricing; real enforcement (website count, manual-crawl monthly limit, scheduling gate, AI-recommendations gate) wired into the actual `addWebsite`/`triggerCrawl`/`setWebsiteSchedule`/`generateReport` actions, not just computed and ignored
+- [x] Stripe adapter in test mode — real `StripeProvider` (webhook signature verification via Stripe's own SDK, idempotency via a `processed_webhook_events` ledger) behind a `BillingProvider` interface, with a `MockBillingProvider` used automatically since no real Stripe keys exist yet (the project owner's explicit choice — this is now an internal tool, not a public SaaS, so Stripe going live is deprioritized indefinitely, not just "not done yet")
+- [x] Billing explicitly stays in test mode — `StripeProvider`'s constructor refuses any key that isn't `sk_test_...` outside `NODE_ENV=test`, verified by reading the source directly
 
-**Deviation from ARCHITECTURE.md (documented, reasonable):** used a thin hand-rolled Stripe adapter instead of the official `@better-auth/stripe` plugin, to avoid regenerating the auth schema file and coupling billing into Better Auth's session endpoints for a feature only needed in one direction (webhook → plan sync). Still uses Stripe's real SDK and real signature verification.
+**Independently re-verified in this session:** `npx tsc --noEmit` clean, `npm run build` exit 0 (new `/dashboard/billing` and `/api/webhooks/stripe` routes present), `npx vitest run` → 141 passed, 2 skipped (Ollama, expected), 1 failed — the same pre-existing flaky test documented since before this phase (`reports/generate.test.ts:83`, confirmed unrelated, passes in isolation). Billing page confirmed rendering real, correct usage data in a live authenticated browser session (an account already over its Free-tier manual-crawl quota from earlier testing displayed correctly without crashing).
 
-**Independently re-verified in this session:** reviewed `require-org-access.ts` source directly (not just the report) and confirmed every claimed call site actually uses it; reviewed the adversarial test and plan-limits source directly; confirmed `.env`/`.env.example` contain no real secrets, only clearly-labeled fake test fixtures; `npx vitest run` → **138 passed, 2 skipped (140), exit 0**; `npm run build` → exit 0, all new routes present (`/api/stripe/webhook`, `/dashboard/billing`, `/dashboard/audit-log`).
+**Found and fixed along the way:** a second instance of the exact process-orphaning bug class from Phase 5/the real-machine pass — this time in `scripts/dev-stop.ps1` itself. It matched the `npm run start` wrapper's command line but not the actual `next start` child process's command line (`node .../next/dist/bin/next start`, which doesn't contain "npm run start" as a substring), so a stale pre-Phase-6 server silently kept serving the old build and returning confusing 404s for the new `/dashboard/billing` route — not a billing-code bug at all. Fixed `dev-stop.ps1` to also kill by whoever currently owns ports 3000/3001/4100, not just by command-line pattern match.
 
-**Known gaps:** no live/test Stripe account was ever exercised against the real Stripe API — only offline signature verification was proven; checkout-session creation code exists and is role-gated but unexercised. No org-switcher UI yet — "active org" is still "first org returned for this user" (pre-existing since Phase 2), so a user belonging to multiple orgs can't yet pick which one they're acting as.
+**What could not be verified:** real Stripe network calls (`createCheckoutSession`/`createPortalSession`) and a real webhook delivery from Stripe's actual servers — no real Stripe test keys exist in this environment. Signature verification and idempotency logic were verified for real using Stripe's own offline test helpers (`generateTestHeaderString`), which doesn't require a live account.
 
 ## Phase 7 — Security & QA
 - [ ] Full test suite: unit, integration, API, crawler, migrations, auth, tenant isolation, reports, jobs, billing webhooks, E2E, security regressions

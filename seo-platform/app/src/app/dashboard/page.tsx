@@ -6,8 +6,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { websites, notifications } from "@/db/app-schema";
 import { getMembership } from "@/lib/auth/require-org-access";
-import { getOrgPlan } from "@/lib/plans/limits";
-import { countOrgWebsites, countOrgManualCrawlsThisMonth } from "@/lib/plans/quota";
+import { getUsageSummary } from "@/lib/billing/quota";
 import { SignOutButton } from "./sign-out-button";
 import { addWebsite, markNotificationRead, inviteMemberAction } from "./actions";
 
@@ -42,9 +41,7 @@ export default async function DashboardPage() {
 
   const membership = activeOrg ? await getMembership(session.user.id, activeOrg.id) : null;
   const role = membership?.role ?? null;
-  const planState = activeOrg ? await getOrgPlan(activeOrg.id) : null;
-  const websiteCount = activeOrg ? await countOrgWebsites(activeOrg.id) : 0;
-  const manualCrawlsThisMonth = activeOrg ? await countOrgManualCrawlsThisMonth(activeOrg.id) : 0;
+  const usage = activeOrg ? await getUsageSummary(activeOrg.id) : null;
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
@@ -58,22 +55,28 @@ export default async function DashboardPage() {
         <div className="text-right">
           <p className="text-sm">{session.user.email}</p>
           {role && <p className="text-xs text-foreground/50">Role: {role}</p>}
-          <SignOutButton />
+          <div className="mt-1 flex items-center justify-end gap-3">
+            <Link href="/dashboard/billing" className="text-xs text-foreground/60 hover:underline">
+              Plan &amp; billing
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
       </header>
 
-      {planState && (
+      {usage && (
         <section className="mb-8 rounded-md border border-foreground/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-medium">
-                Plan: {planState.limits.label}{" "}
-                <span className="text-xs text-foreground/50">({planState.status})</span>
+                Plan: {usage.plan.name}{" "}
+                <span className="text-xs text-foreground/50">({usage.status})</span>
               </h2>
               <p className="mt-1 text-xs text-foreground/60">
-                {websiteCount}/{planState.limits.maxWebsites} websites &middot; {manualCrawlsThisMonth}/
-                {planState.limits.maxManualCrawlsPerMonth} manual crawls this month &middot; scheduling{" "}
-                {planState.limits.schedulingAllowed ? "allowed" : "not on this plan"}
+                {usage.websiteCount}/{usage.plan.limits.maxWebsites} websites &middot;{" "}
+                {usage.manualCrawlsThisMonth}/
+                {usage.plan.limits.manualCrawlsPerMonth ?? "unlimited"} manual crawls this month &middot;
+                scheduling {usage.plan.limits.schedulingEnabled ? "allowed" : "not on this plan"}
               </p>
             </div>
             <div className="flex gap-2 text-xs">
